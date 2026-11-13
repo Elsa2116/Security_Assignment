@@ -202,6 +202,7 @@ async function loadDashboard() {
       item.append(title, details); requestBox.append(item);
     });
     document.querySelector('#auth').style.display = 'none';
+    document.body.classList.add('authenticated');
     document.querySelector('#app-shell').style.display = 'grid';
     document.querySelector('#dashboard').style.display = 'grid';
     document.querySelector('#logout').hidden = false;
