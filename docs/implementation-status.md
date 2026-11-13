@@ -1,0 +1,36 @@
+# SecureFlow implementation status
+
+Status is evidence-based. `PASS` means verified in this repository/runtime; `BLOCKED` means the requirement needs an external dependency or an implementation slice that is not present; `FAIL` means a verified defect.
+
+## Verified PASS
+
+| Area | Evidence | Result |
+|---|---|---|
+| TypeScript production build | `docker compose build api worker` | PASS |
+| PostgreSQL 16 in Docker | `docker compose ps` | PASS |
+| API health/readiness | `GET /health`, `GET /api/v1/health/ready` | PASS |
+| Better Auth PostgreSQL signup | `POST /api/auth/sign-up/email` | PASS; user and profile persisted |
+| Verification outbox | PostgreSQL query of `app.outbox_events` | PASS; worker marked delivery |
+| Raw SQL migrations | `migrations/001` through `005` | PASS; no ORM dependency |
+| Transactional approval foundation | `src/api.ts`, `src/db/pool.ts` | PASS by code inspection; live approval evidence pending admitted demo users |
+| Hash-chain audit foundation | `src/security/audit-chain.ts` | PASS by code inspection; live tamper drill pending |
+| Docker supporting services | PostgreSQL, Redis, Mailpit, MinIO, API, worker | PASS; MinIO mapped to host `9010/9011` |
+
+## BLOCKED or incomplete
+
+- Full Next.js App Router UI and Playwright browser evidence: BLOCKED/incomplete; current executable surface is the Express API.
+- Production SMTP/CAPTCHA provider, S3 object-lock/WAL archival, TLS termination, external log sink, and mTLS: BLOCKED until credentials/infrastructure are configured.
+- Full MFA challenge integrated into Better Auth sign-in, password lockout, password reset, session-cookie rotation, and CSRF token issuance: implementation incomplete.
+- Full governance routes (incidents, access reviews, policies, risks, change management, awareness) and their UI: implementation incomplete.
+- Restore-to-isolated-database drill: BLOCKED until an isolated target and `pg_dump`/`pg_restore` execution environment are provided.
+- ZAP/CodeQL/Semgrep/Playwright performance and staging rollback evidence: not run; no PASS claim.
+
+## Reproducible commands
+
+```powershell
+docker compose build api worker
+docker compose up -d
+Invoke-WebRequest http://localhost:3000/health
+Invoke-WebRequest http://localhost:3000/api/v1/health/ready
+docker compose exec postgres psql -U secureflow -d secureflow -c "select version from app.schema_migrations order by version;"
+```

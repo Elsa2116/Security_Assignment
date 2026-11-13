@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pool } from '../src/db/pool.js';
 
-const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
+const migrationsDir = path.resolve(process.cwd(), 'migrations');
 const client = await pool.connect();
 try {
   await client.query('BEGIN');

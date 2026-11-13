@@ -27,13 +27,59 @@ services:
       BETTER_AUTH_URL: http://localhost:3000
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
-      BACKUP_ENCRYPTION_KEY: replace-with-32-byte-base64-key
+      BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
     ports:
       - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["sh", "-c", "node dist/scripts/migrate.js && npx auth@latest migrate && npm run start"]
+    command: ["sh", "-c", "node dist/scripts/migrate.js && npm run start"]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - secureflow-redis:/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: secureflow
+      MINIO_ROOT_PASSWORD: secureflow_minio_password
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - secureflow-minio:/data
+
+  worker:
+    build: .
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://secureflow:secureflow_dev_password@postgres:5432/secureflow
+      JWT_ACCESS_SECRET: replace-with-at-least-32-random-characters
+      BETTER_AUTH_SECRET: replace-with-at-least-32-random-characters
+      BETTER_AUTH_URL: http://localhost:3000
+      ACCESS_TOKEN_TTL_SECONDS: 900
+      REFRESH_TOKEN_TTL_SECONDS: 2592000
+      BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["node", "dist/src/workers/index.js"]
 
 volumes:
   secureflow-postgres:
+  secureflow-redis:
+  secureflow-minio:

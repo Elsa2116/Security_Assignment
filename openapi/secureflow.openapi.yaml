@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: SecureFlow API
+  version: 0.1.0
+  description: Secure request and approval management API. Authentication is provided by Better Auth.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      operationId: health
+      responses:
+        '200': { description: Healthy }
+  /api/v1/health/live:
+    get:
+      operationId: live
+      responses:
+        '200': { description: Live }
+  /api/v1/health/ready:
+    get:
+      operationId: ready
+      responses:
+        '200': { description: Ready }
+        '503': { description: Dependency unavailable }
+  /api/v1/requests:
+    get:
+      operationId: listRequests
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200': { description: Own requests }
+        '401': { description: Unauthenticated }
+    post:
+      operationId: createRequest
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRequest' }
+      responses:
+        '201': { description: Created }
+        '422': { description: Validation error }
+  /api/v1/requests/{id}:
+    get:
+      operationId: getRequest
+      security: [{ sessionCookie: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200': { description: Request detail }
+        '404': { description: Not found }
+  /api/v1/requests/{id}/approve:
+    post:
+      operationId: approveRequest
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Decision' } } }
+      responses:
+        '200': { description: Approved }
+        '403': { description: Forbidden }
+        '409': { description: Concurrent or stale state }
+  /api/v1/requests/{id}/reject:
+    post:
+      operationId: rejectRequest
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Decision' } } }
+      responses:
+        '200': { description: Rejected }
+        '422': { description: Rejection reason required }
+  /api/v1/access/role-change-requests:
+    get:
+      operationId: listRoleChangeRequests
+      security: [{ sessionCookie: [] }]
+      responses: { '200': { description: Role change requests } }
+    post:
+      operationId: createRoleChangeRequest
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RoleChangeRequest' } } }
+      responses: { '201': { description: Created }, '422': { description: Validation error } }
+  /api/v1/admin/audit/integrity:
+    get:
+      operationId: auditIntegrity
+      security: [{ sessionCookie: [] }]
+      responses: { '200': { description: Integrity result }, '403': { description: Forbidden } }
+components:
+  parameters:
+    RequestId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 16, maxLength: 200 } }
+  securitySchemes:
+    sessionCookie: { type: apiKey, in: cookie, name: better-auth.session_token }
+  schemas:
+    CreateRequest:
+      type: object
+      required: [type, title, payload]
+      properties:
+        type: { type: string, enum: [LEAVE, EQUIPMENT, SERVICE] }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, maxLength: 4000 }
+        payload: { type: object, additionalProperties: true }
+    Decision:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        comment: { type: string, maxLength: 2000 }
+        reason: { type: string, maxLength: 2000 }
+    RoleChangeRequest:
+      type: object
+      required: [targetUserId, roleCode, operation, reason]
+      properties:
+        targetUserId: { type: string, format: uuid }
+        roleCode: { type: string }
+        operation: { type: string, enum: [GRANT, REVOKE] }
+        reason: { type: string, minLength: 10 }

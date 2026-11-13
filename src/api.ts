@@ -1,0 +1,183 @@
+import crypto from 'node:crypto';
+import { Router } from 'express';
+import { z } from 'zod';
+import { query, withTransaction } from './db/pool.js';
+import { appendAudit, verifyAuditChain } from './security/audit-chain.js';
+import { AuthenticatedRequest, failure, requireAuth, requirePermission, requestContext, result } from './security/http.js';
+
+const uuid = z.string().uuid();
+const requestSchema = z.object({ type: z.enum(['LEAVE','EQUIPMENT','SERVICE']), title: z.string().trim().min(1).max(160), description: z.string().max(4000).default(''), payload: z.record(z.string(), z.unknown()) });
+const roleRequestSchema = z.object({ targetUserId: uuid, roleCode: z.string().regex(/^[A-Z_]+$/), operation: z.enum(['GRANT','REVOKE']), reason: z.string().trim().min(10).max(2000) });
+
+export const api = Router();
+api.use(requestContext);
+
+api.get('/health/live', (_req, res) => result(res, undefined, { status: 'ok' }));
+api.get('/health/ready', async (req: AuthenticatedRequest, res) => {
+  try { await query('SELECT 1'); return result(res, req.requestId, { status: 'ready', database: 'ok' }); }
+  catch { return failure(res, req.requestId, 'NOT_READY', 'Dependency unavailable', 503); }
+});
+
+api.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const r = await query(`SELECT up.user_id AS "userId", up.name, up.email_normalized AS email, up.status, up.organization_id AS "organizationId", up.department_id AS "departmentId",
+    COALESCE(json_agg(DISTINCT ro.code) FILTER (WHERE ro.code IS NOT NULL), '[]') roles FROM app.user_profiles up LEFT JOIN app.user_roles ur ON ur.user_id=up.user_id AND ur.revoked_at IS NULL LEFT JOIN app.roles ro ON ro.id=ur.role_id WHERE up.user_id=$1 GROUP BY up.user_id`, [req.user!.id]);
+  return result(res, req.requestId, r.rows[0] ?? { userId: req.user!.id });
+});
+
+api.get('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 20) || 20, 100);
+  const status = typeof req.query.status === 'string' ? req.query.status : null;
+  const r = await query(`SELECT id,type,title,description,payload_json AS payload,status,version,created_at AS "createdAt",updated_at AS "updatedAt"
+    FROM app.requests WHERE owner_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3`, [req.user!.id, status, limit]);
+  return result(res, req.requestId, r.rows);
+});
+
+api.post('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid request', 422, parsed.error.flatten().fieldErrors as Record<string, string>);
+  const idempotency = req.header('idempotency-key');
+  if (!idempotency) return failure(res, req.requestId, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key is required', 400);
+  const requestHash = crypto.createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex');
+  try {
+    const created = await withTransaction(async (client) => {
+      const existing = await client.query<{ response_ref: string | null; request_hash: string }>('SELECT response_ref,request_hash FROM app.idempotency_keys WHERE user_id=$1 AND key=$2 AND route=$3 AND expires_at>now()', [req.user!.id, idempotency, 'POST /requests']);
+      if (existing.rowCount) {
+        if (existing.rows[0].request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT');
+        return client.query('SELECT id,status,version FROM app.requests WHERE id=$1', [existing.rows[0].response_ref]);
+      }
+      const profile = await client.query<{ organization_id: string; department_id: string; manager_user_id: string }>(`SELECT up.organization_id,up.department_id,d.manager_user_id FROM app.user_profiles up JOIN app.departments d ON d.id=up.department_id WHERE up.user_id=$1 AND up.status='ACTIVE'`, [req.user!.id]);
+      if (profile.rowCount !== 1) throw new Error('PROFILE_NOT_ADMITTED');
+      const inserted = await client.query<{ id: string; status: string; version: number }>(`INSERT INTO app.requests(organization_id,department_id,owner_id,assigned_manager_id,type,title,description,payload_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,status,version`, [profile.rows[0].organization_id, profile.rows[0].department_id, req.user!.id, profile.rows[0].manager_user_id, parsed.data.type, parsed.data.title, parsed.data.description, JSON.stringify(parsed.data.payload)]);
+      await client.query('INSERT INTO app.request_history(request_id,actor_id,to_status,changed_fields) VALUES ($1,$2,$3,$4)', [inserted.rows[0].id, req.user!.id, 'PENDING', JSON.stringify(parsed.data)]);
+      await client.query('INSERT INTO app.idempotency_keys(user_id,key,route,request_hash,response_ref,expires_at) VALUES ($1,$2,$3,$4,$5,now()+interval \'24 hours\')', [req.user!.id, idempotency, 'POST /requests', requestHash, inserted.rows[0].id]);
+      await appendAudit(client, { actorId: req.user!.id, action: 'request.create', resourceType: 'request', resourceId: inserted.rows[0].id, outcome: 'success', correlationId: req.requestId, metadata: { type: parsed.data.type } });
+      return { rows: [inserted.rows[0]] };
+    });
+    return result(res, req.requestId, created.rows[0], 201);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT') return failure(res, req.requestId, 'IDEMPOTENCY_CONFLICT', 'The same idempotency key was used with different data', 409);
+    if (error instanceof Error && error.message === 'PROFILE_NOT_ADMITTED') return failure(res, req.requestId, 'NOT_ADMITTED', 'The account is not admitted to an organization', 403);
+    return failure(res, req.requestId, 'REQUEST_CREATE_FAILED', 'Could not create request', 409);
+  }
+});
+
+api.get('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const r = await query(`SELECT r.id,r.type,r.title,r.description,r.payload_json AS payload,r.status,r.version,r.owner_id AS "ownerId",r.department_id AS "departmentId",r.assigned_manager_id AS "assignedManagerId",r.created_at AS "createdAt",r.updated_at AS "updatedAt"
+    FROM app.requests r WHERE r.id=$1 AND (r.owner_id=$2 OR r.assigned_manager_id=$2)`, [req.params.id, req.user!.id]);
+  if (!r.rowCount) return failure(res, req.requestId, 'NOT_FOUND', 'Request not found', 404);
+  const history = await query('SELECT actor_id AS "actorId",from_status AS "fromStatus",to_status AS "toStatus",changed_fields AS "changedFields",created_at AS "createdAt" FROM app.request_history WHERE request_id=$1 ORDER BY created_at', [req.params.id]);
+  return result(res, req.requestId, { ...r.rows[0], history: history.rows });
+});
+
+api.get('/approvals', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const r = await query(`SELECT id,type,title,description,status,version,owner_id AS "ownerId",department_id AS "departmentId",created_at AS "createdAt" FROM app.requests WHERE assigned_manager_id=$1 AND status='PENDING' ORDER BY created_at`, [req.user!.id]);
+  return result(res, req.requestId, r.rows);
+});
+
+async function decideRequest(req: AuthenticatedRequest, res: any, decision: 'APPROVED'|'REJECTED') {
+  const schema = z.object({ expectedVersion: z.number().int().positive(), comment: z.string().max(2000).default(''), reason: z.string().trim().min(1).max(2000).optional() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success || (decision === 'REJECTED' && !parsed.data.reason)) return failure(res, req.requestId, 'VALIDATION_ERROR', 'A rejection reason is required', 422);
+  const key = req.header('idempotency-key');
+  if (!key) return failure(res, req.requestId, 'IDEMPOTENCY_REQUIRED', 'Idempotency-Key is required', 400);
+  try {
+    const updated = await withTransaction(async (client) => {
+      const found = await client.query<{ id: string; owner_id: string; assigned_manager_id: string; status: string; version: number }>('SELECT id,owner_id,assigned_manager_id,status,version FROM app.requests WHERE id=$1 FOR UPDATE', [req.params.id]);
+      if (found.rowCount !== 1) throw new Error('NOT_FOUND');
+      const row = found.rows[0];
+      if (row.assigned_manager_id !== req.user!.id || row.owner_id === req.user!.id) throw new Error('FORBIDDEN');
+      if (row.status !== 'PENDING' || row.version !== parsed.data.expectedVersion) throw new Error('CONFLICT');
+      const next = await client.query<{ id: string; status: string; version: number }>('UPDATE app.requests SET status=$1,version=version+1,updated_at=now() WHERE id=$2 AND status=\'PENDING\' AND version=$3 RETURNING id,status,version', [decision, req.params.id, parsed.data.expectedVersion]);
+      if (!next.rowCount) throw new Error('CONFLICT');
+      await client.query('INSERT INTO app.request_decisions(request_id,reviewer_id,decision,reason) VALUES ($1,$2,$3,$4)', [req.params.id, req.user!.id, decision, parsed.data.reason ?? parsed.data.comment]);
+      await client.query('INSERT INTO app.request_history(request_id,actor_id,from_status,to_status,changed_fields) VALUES ($1,$2,$3,$4,$5)', [req.params.id, req.user!.id, 'PENDING', decision, JSON.stringify({ comment: parsed.data.comment, reason: parsed.data.reason })]);
+      await client.query('INSERT INTO app.notifications(user_id,type,title,body) SELECT owner_id,$1,$2,$3 FROM app.requests WHERE id=$4', ['REQUEST_DECISION', `Request ${decision.toLowerCase()}`, `Your request has been ${decision.toLowerCase()}.`, req.params.id]);
+      await client.query('INSERT INTO app.outbox_events(event_type,payload) VALUES ($1,$2)', ['REQUEST_DECISION', JSON.stringify({ requestId: req.params.id, decision })]);
+      await appendAudit(client, { actorId: req.user!.id, action: `request.${decision.toLowerCase()}`, resourceType: 'request', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId) });
+      return next.rows[0];
+    });
+    return result(res, req.requestId, updated);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    return failure(res, req.requestId, code === 'FORBIDDEN' ? 'FORBIDDEN' : code === 'NOT_FOUND' ? 'NOT_FOUND' : 'STATE_CONFLICT', code === 'FORBIDDEN' ? 'You cannot approve this request' : 'Request is no longer actionable', code === 'FORBIDDEN' ? 403 : code === 'NOT_FOUND' ? 404 : 409);
+  }
+}
+api.post('/requests/:id/approve', requireAuth, (req, res) => decideRequest(req as AuthenticatedRequest, res, 'APPROVED'));
+api.post('/requests/:id/reject', requireAuth, (req, res) => decideRequest(req as AuthenticatedRequest, res, 'REJECTED'));
+
+api.post('/access/role-change-requests', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = roleRequestSchema.safeParse(req.body);
+  if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid role change request', 422);
+  try {
+    const created = await withTransaction(async (client) => {
+      const role = await client.query<{ id: string }>('SELECT id FROM app.roles WHERE code=$1', [parsed.data.roleCode]);
+      if (!role.rowCount) throw new Error('ROLE_NOT_FOUND');
+      const inserted = await client.query('INSERT INTO app.role_change_requests(target_user_id,requested_by,role_id,operation,reason) VALUES ($1,$2,$3,$4,$5) RETURNING id,status,version,created_at AS "createdAt"', [parsed.data.targetUserId, req.user!.id, role.rows[0].id, parsed.data.operation, parsed.data.reason]);
+      await appendAudit(client, { actorId: req.user!.id, action: 'role-change.request', resourceType: 'role_change_request', resourceId: inserted.rows[0].id, outcome: 'success', correlationId: req.requestId, metadata: { roleCode: parsed.data.roleCode, operation: parsed.data.operation } });
+      return inserted.rows[0];
+    });
+    return result(res, req.requestId, created, 201);
+  } catch { return failure(res, req.requestId, 'ROLE_REQUEST_FAILED', 'Could not create role change request', 409); }
+});
+
+api.get('/access/role-change-requests', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const review = await requirePermission(req.user!.id, 'roles:approve');
+  const r = await query(`SELECT rr.id,rr.target_user_id AS "targetUserId",rr.requested_by AS "requestedBy",ro.code AS "roleCode",rr.operation,rr.reason,rr.status,rr.version,rr.created_at AS "createdAt"
+    FROM app.role_change_requests rr JOIN app.roles ro ON ro.id=rr.role_id WHERE ($1 OR rr.requested_by=$2 OR rr.target_user_id=$2) ORDER BY rr.created_at DESC`, [review, req.user!.id]);
+  return result(res, req.requestId, r.rows);
+});
+
+async function decideRoleChange(req: AuthenticatedRequest, res: any, decision: 'APPROVED'|'REJECTED') {
+  const body = z.object({ comment: z.string().trim().min(decision === 'REJECTED' ? 1 : 0).max(2000).default('') }).safeParse(req.body);
+  if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Comment is required', 422);
+  if (!(await requirePermission(req.user!.id, 'roles:approve'))) return failure(res, req.requestId, 'FORBIDDEN', 'Role approval permission required', 403);
+  try {
+    const final = await withTransaction(async (client) => {
+      const found = await client.query<{ target_user_id: string; requested_by: string; role_id: string; operation: 'GRANT'|'REVOKE'; status: string }>('SELECT target_user_id,requested_by,role_id,operation,status FROM app.role_change_requests WHERE id=$1 FOR UPDATE', [req.params.id]);
+      if (!found.rowCount) throw new Error('NOT_FOUND');
+      const item = found.rows[0];
+      if (item.requested_by === req.user!.id || item.target_user_id === req.user!.id || item.status !== 'PENDING') throw new Error('FORBIDDEN');
+      await client.query('INSERT INTO app.role_change_decisions(role_change_request_id,reviewer_id,decision,comment) VALUES ($1,$2,$3,$4)', [req.params.id, req.user!.id, decision, body.data.comment]);
+      const role = await client.query<{ code: string }>('SELECT code FROM app.roles WHERE id=$1', [item.role_id]);
+      if (decision === 'APPROVED' && role.rows[0]?.code === 'ADMIN') {
+        const count = await client.query<{ count: string }>('SELECT count(*) FROM app.role_change_decisions WHERE role_change_request_id=$1 AND decision=\'APPROVED\'', [req.params.id]);
+        if (Number(count.rows[0].count) < 2) return { status: 'PENDING', approvals: Number(count.rows[0].count) };
+      }
+      await client.query('UPDATE app.role_change_requests SET status=$1,version=version+1,updated_at=now() WHERE id=$2', [decision, req.params.id]);
+      if (decision === 'APPROVED') {
+        if (item.operation === 'GRANT') await client.query('INSERT INTO app.user_roles(user_id,role_id,assigned_by,grant_request_id) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id,role_id) DO UPDATE SET revoked_at=NULL,assigned_by=EXCLUDED.assigned_by', [item.target_user_id, item.role_id, req.user!.id, req.params.id]);
+        else await client.query('UPDATE app.user_roles SET revoked_at=now() WHERE user_id=$1 AND role_id=$2', [item.target_user_id, item.role_id]);
+        await client.query('UPDATE auth.session SET revoked_at=now() WHERE user_id=$1', [item.target_user_id]).catch(() => undefined);
+      }
+      await appendAudit(client, { actorId: req.user!.id, action: `role-change.${decision.toLowerCase()}`, resourceType: 'role_change_request', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId) });
+      return { status: decision, roleCode: role.rows[0]?.code };
+    });
+    return result(res, req.requestId, final);
+  } catch { return failure(res, req.requestId, 'ROLE_CHANGE_CONFLICT', 'Role change cannot be completed', 409); }
+}
+api.post('/admin/role-change-requests/:id/approve', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'APPROVED'));
+api.post('/admin/role-change-requests/:id/reject', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'REJECTED'));
+
+api.get('/admin/audit', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'audit:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit access required', 403);
+  const r = await query('SELECT sequence,actor_user_id AS "actorId",action,resource_type AS "resourceType",resource_id AS "resourceId",outcome,created_at AS "occurredAt",correlation_id AS "correlationId",entry_hash AS "entryHash" FROM app.audit_events ORDER BY sequence DESC LIMIT 100');
+  return result(res, req.requestId, r.rows);
+});
+api.get('/admin/audit/integrity', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'audit:verify'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit verification access required', 403);
+  return result(res, req.requestId, await verifyAuditChain());
+});
+api.get('/admin/alerts', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'alerts:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Alert access required', 403);
+  const r = await query('SELECT id,alert_type AS rule,severity,details,acknowledged_at AS "acknowledgedAt",created_at AS "createdAt" FROM app.security_alerts ORDER BY created_at DESC LIMIT 100');
+  return result(res, req.requestId, r.rows);
+});
+api.get('/notifications', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const r = await query('SELECT id,type,title,body,status,read_at AS "readAt",created_at AS "createdAt" FROM app.notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100', [req.user!.id]);
+  return result(res, req.requestId, r.rows);
+});
+api.patch('/notifications/:id/read', requireAuth, async (req: AuthenticatedRequest, res) => {
+  await query('UPDATE app.notifications SET status=\'READ\',read_at=now() WHERE id=$1 AND user_id=$2', [req.params.id, req.user!.id]);
+  return result(res, req.requestId, { id: req.params.id, status: 'READ' });
+});
+
