@@ -48,7 +48,7 @@ document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('cl
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav === item));
   const employeeView = ['overview', 'requests', 'new-request'].includes(view);
   document.querySelector('.dashboard-wrap').style.display = employeeView ? 'block' : 'none';
-  document.querySelector('#dashboard').style.display = view === 'requests' ? 'grid' : 'none';
+  document.querySelector('#dashboard').style.display = ['requests', 'new-request'].includes(view) ? 'grid' : 'none';
   document.querySelector('#overview-panel').classList.toggle('active', view === 'overview');
   document.querySelector('#request-form').hidden = view !== 'new-request';
   document.querySelector('#requests').closest('.requests-card').hidden = view !== 'requests';
