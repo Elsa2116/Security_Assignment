@@ -67,8 +67,28 @@ async function loadDashboard() {
   try {
     const profile = await api('/api/v1/me');
     const requests = await api('/api/v1/requests');
-    document.querySelector('#profile').textContent = JSON.stringify(profile, null, 2);
-    document.querySelector('#requests').textContent = JSON.stringify(requests, null, 2);
+    // Render server data as text nodes so user-controlled values cannot become HTML.
+    const profileBox = document.querySelector('#profile');
+    profileBox.replaceChildren();
+    [['Name', profile.name], ['Email', profile.email], ['Status', profile.status], ['Organization', profile.organizationId || 'Not assigned'], ['Roles', profile.roles?.length ? profile.roles.join(', ') : 'No roles assigned']].forEach(([label, value]) => {
+      const row = document.createElement('div');
+      row.className = 'profile-row';
+      const name = document.createElement('span'); name.className = 'profile-label'; name.textContent = label;
+      const detail = document.createElement('span'); detail.className = 'profile-value'; detail.textContent = String(value ?? '—');
+      if (label === 'Status') detail.className = 'status-chip';
+      row.append(name, detail); profileBox.append(row);
+    });
+    const requestBox = document.querySelector('#requests');
+    requestBox.replaceChildren();
+    const requestRows = Array.isArray(requests) ? requests : (requests.items || []);
+    if (!requestRows.length) {
+      const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No requests yet. Create your first request to get started.'; requestBox.append(empty);
+    } else requestRows.forEach(request => {
+      const item = document.createElement('div'); item.className = 'request-item';
+      const title = document.createElement('strong'); title.textContent = request.title || request.type || 'Request';
+      const details = document.createElement('span'); details.textContent = `${request.type || 'REQUEST'} · ${request.status || 'SUBMITTED'}`;
+      item.append(title, details); requestBox.append(item);
+    });
     document.querySelector('#auth').style.display = 'none';
     document.querySelector('#dashboard').style.display = 'grid';
     document.querySelector('#logout').hidden = false;
