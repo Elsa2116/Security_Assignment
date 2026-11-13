@@ -34,6 +34,9 @@ services:
       HIBP_PASSWORD_CHECK: ${HIBP_PASSWORD_CHECK:-false}
     ports:
       - "3000:3000"
+    # Persist encrypted backup files on the host for local verification and restore drills.
+    volumes:
+      - ./backups:/app/backups
     depends_on:
       postgres:
         condition: service_healthy
