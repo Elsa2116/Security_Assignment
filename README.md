@@ -2,6 +2,8 @@
 
 SecureFlow is scaffolded as a TypeScript Node API with PostgreSQL in Docker.
 
+Code comments follow a maintenance convention: module comments explain ownership, function comments explain security invariants and transaction boundaries, and migration comments explain schema intent. New security-sensitive code should document what it protects and why.
+
 ## Database rules
 
 - Application queries use `pg.Pool` and parameterized SQL only.

@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// Validate configuration once at startup so missing secrets or database settings
+// fail fast instead of causing an unsafe, partially configured server.
 export const config = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),

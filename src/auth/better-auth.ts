@@ -4,7 +4,11 @@ import { config } from '../config.js';
 import { query } from '../db/pool.js';
 
 // Better Auth owns supported authentication operations. Application data access remains raw SQL.
+// The auth pool uses the auth schema so Better Auth's tables cannot collide with app tables.
 export const authPool = new Pool({ connectionString: config.DATABASE_URL, max: 10, options: '-c search_path=auth' });
+
+// This configuration keeps credential lifecycle, sessions, and verification in Better Auth,
+// while the post-create hook creates SecureFlow's organization/profile record.
 export const auth = betterAuth({
   secret: config.BETTER_AUTH_SECRET,
   baseURL: config.BETTER_AUTH_URL,

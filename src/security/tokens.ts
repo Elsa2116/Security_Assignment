@@ -10,10 +10,12 @@ const publicKey = process.env.JWT_PUBLIC_KEY || generated.publicKey.export({ typ
 const issuer = process.env.TOKEN_ISSUER || 'secureflow';
 const audience = process.env.TOKEN_AUDIENCE || 'secureflow-api';
 
+// Issue a short-lived asymmetric access token. Roles are informational; authorization still queries PostgreSQL.
 export function issueAccessToken(userId: string, roles: string[], sessionId: string) {
   return jwt.sign({ sub: userId, roles, type: 'access', sid: sessionId, jti: crypto.randomUUID() }, privateKey, { algorithm: 'RS256', expiresIn: Math.min(config.ACCESS_TOKEN_TTL_SECONDS, 600), issuer, audience, keyid: process.env.JWT_KEY_ID || 'dev-ephemeral' });
 }
 
+// Validate signature, issuer/audience, claims, token revocation, and live session state.
 export async function verifyAccessToken(token: string) {
   const payload = jwt.verify(token, publicKey, { algorithms: ['RS256'], issuer, audience }) as jwt.JwtPayload;
   if (!payload.jti || !payload.sid || !payload.sub) throw new Error('invalid_token_claims');
@@ -24,8 +26,10 @@ export async function verifyAccessToken(token: string) {
   return payload;
 }
 
+// Hash opaque refresh secrets before persistence so database disclosure does not reveal usable tokens.
 export function hashRefreshToken(token: string) { return crypto.createHash('sha256').update(token).digest('hex'); }
 
+// Create a seven-day refresh-token family and persist only the token hash.
 export async function issueRefreshToken(userId: string, sessionId: string) {
   return withTransaction(async (client) => {
     const family = await client.query<{ id: string }>(`INSERT INTO app.refresh_token_families(user_id,session_id,absolute_expires_at) VALUES ($1,$2,now()+interval '7 days') RETURNING id`, [userId, sessionId]);
@@ -35,6 +39,7 @@ export async function issueRefreshToken(userId: string, sessionId: string) {
   });
 }
 
+// Rotate one refresh token inside one transaction and revoke the family on replay.
 export async function rotateRefreshToken(oldToken: string, userId: string) {
   return withTransaction(async (client) => {
     const oldHash = hashRefreshToken(oldToken);
@@ -56,6 +61,7 @@ export async function rotateRefreshToken(oldToken: string, userId: string) {
   });
 }
 
+// Revoke the Better Auth session so previously issued access tokens fail the live-session check.
 export async function revokeSession(userId: string, sessionId: string, reason = 'logout') {
   await withTransaction(async (client) => {
     await client.query('UPDATE auth.session SET revoked_at=now() WHERE id=$1 AND user_id=$2', [sessionId, userId]);

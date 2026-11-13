@@ -1,5 +1,6 @@
 import { pool, query, withTransaction } from '../src/db/pool.js';
 const row = await query<{ id: string }>(`SELECT id FROM app.backup_records WHERE status='COMPLETED' ORDER BY created_at DESC LIMIT 1`);
+// A restore test must target an isolated database; do not silently restore into production.
 if (!row.rowCount) throw new Error('no_completed_backup');
 const started = Date.now();
 await withTransaction(async (client) => {

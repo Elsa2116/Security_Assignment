@@ -1,3 +1,5 @@
+-- Core authorization, token, audit, alert, and security-evidence tables.
+-- Keep this migration append-only after release; add a new numbered migration for changes.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS app.roles (

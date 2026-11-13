@@ -1,3 +1,4 @@
+-- Add immutable audit protection and supporting indexes after the base tables exist.
 ALTER TABLE app.refresh_tokens
   ADD CONSTRAINT refresh_tokens_expiry_check CHECK (expires_at > created_at);
 

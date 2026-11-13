@@ -1,3 +1,5 @@
+-- Contract domain tables for organizations, requests, role workflows, MFA, governance,
+-- notifications, backups, incidents, and evidence. Application code accesses these with raw SQL.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS app.organizations (

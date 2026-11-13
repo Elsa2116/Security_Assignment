@@ -1,3 +1,5 @@
+-- Better Auth's official PostgreSQL adapter owns these tables at runtime.
+-- Column mappings are declared in src/auth/better-auth.ts; this migration only provisions them.
 CREATE TABLE IF NOT EXISTS auth."user" (
   id text PRIMARY KEY,
   name text NOT NULL,

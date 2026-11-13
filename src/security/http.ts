@@ -6,12 +6,14 @@ import { query } from '../db/pool.js';
 
 export type AuthenticatedRequest = Request & { user?: { id: string; email?: string; name?: string }; session?: unknown; requestId?: string };
 
+// Attach a correlation ID to every request so API responses and audit entries can be traced together.
 export function requestContext(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   req.requestId = req.header('x-request-id') || crypto.randomUUID();
   res.setHeader('x-request-id', req.requestId);
   next();
 }
 
+// Resolve the current Better Auth session with cookie/header data and never trust client role claims.
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers), query: { disableCookieCache: true } });
@@ -24,14 +26,17 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 }
 
+// Keep successful API responses in the contract's data/meta envelope.
 export function result(res: Response, requestId: string | undefined, data: unknown, status = 200, meta: Record<string, unknown> = {}) {
   return res.status(status).json({ data, meta: { requestId, ...meta } });
 }
 
+// Return a generic, structured error without exposing SQL, stack traces, or secrets.
 export function failure(res: Response, requestId: string | undefined, code: string, message: string, status: number, fieldErrors: Record<string, string> = {}) {
   return res.status(status).json({ error: { code, message, fieldErrors }, meta: { requestId } });
 }
 
+// Read fresh permission assignments from PostgreSQL for every protected decision.
 export async function requirePermission(userId: string, permission: string) {
   const found = await query<{ allowed: boolean }>(`SELECT EXISTS (
     SELECT 1 FROM app.user_roles ur JOIN app.role_permissions rp ON rp.role_id = ur.role_id JOIN app.permissions p ON p.id = rp.permission_id

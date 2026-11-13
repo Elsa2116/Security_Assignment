@@ -1,12 +1,14 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db/pool.js';
 
+// Check current role/permission rows instead of trusting a cached JWT role claim.
 export async function hasPermission(userId: string, permission: string) {
   const result = await query<{ allowed: boolean }>(
     `SELECT EXISTS (SELECT 1 FROM app.user_roles ur JOIN app.role_permissions rp ON rp.role_id = ur.role_id JOIN app.permissions p ON p.id = rp.permission_id WHERE ur.user_id = $1 AND p.name = $2) AS allowed`, [userId, permission]);
   return result.rows[0]?.allowed === true;
 }
 
+// Assign a role and its audit event atomically; normal callers must reach this through approval flow.
 export function changeRole(actorUserId: string, targetUserId: string, roleName: string) {
   return withTransaction(async (client: PoolClient) => {
     const role = await client.query<{ id: string }>('SELECT id FROM app.roles WHERE name = $1', [roleName]);

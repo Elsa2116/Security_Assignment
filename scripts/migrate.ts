@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pool } from '../src/db/pool.js';
 
+// Apply each numbered SQL file once, inside one transaction, so a failed migration
+// cannot leave the schema marked as complete.
 const migrationsDir = path.resolve(process.cwd(), 'migrations');
 const client = await pool.connect();
 try {

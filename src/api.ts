@@ -14,6 +14,7 @@ const roleRequestSchema = z.object({ targetUserId: uuid, roleCode: z.string().re
 export const api = Router();
 api.use(requestContext);
 
+// Public operational endpoints allow Docker health checks without exposing application data.
 api.get('/health/live', (_req, res) => result(res, undefined, { status: 'ok' }));
 api.get('/health/ready', async (req: AuthenticatedRequest, res) => {
   try { await query('SELECT 1'); return result(res, req.requestId, { status: 'ready', database: 'ok' }); }
@@ -26,6 +27,7 @@ api.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   return result(res, req.requestId, r.rows[0] ?? { userId: req.user!.id });
 });
 
+// Employee request list is always owner-scoped and uses an allowlisted status filter.
 api.get('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   const limit = Math.min(Number(req.query.limit ?? 20) || 20, 100);
   const status = typeof req.query.status === 'string' ? req.query.status : null;
@@ -34,6 +36,7 @@ api.get('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   return result(res, req.requestId, r.rows);
 });
 
+// Create a request with idempotency, profile/department lookup, history, and audit in one transaction.
 api.post('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = requestSchema.safeParse(req.body);
   if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid request', 422, parsed.error.flatten().fieldErrors as Record<string, string>);
@@ -63,6 +66,7 @@ api.post('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// Return a request only to its owner or assigned manager, together with immutable history.
 api.get('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   const r = await query(`SELECT r.id,r.type,r.title,r.description,r.payload_json AS payload,r.status,r.version,r.owner_id AS "ownerId",r.department_id AS "departmentId",r.assigned_manager_id AS "assignedManagerId",r.created_at AS "createdAt",r.updated_at AS "updatedAt"
     FROM app.requests r WHERE r.id=$1 AND (r.owner_id=$2 OR r.assigned_manager_id=$2)`, [req.params.id, req.user!.id]);
@@ -71,6 +75,7 @@ api.get('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => 
   return result(res, req.requestId, { ...r.rows[0], history: history.rows });
 });
 
+// Update only pending requests owned by the caller using optimistic version checking.
 api.patch('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = z.object({ expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(160).optional(), description: z.string().max(4000).optional(), payload: z.record(z.string(), z.unknown()).optional() }).safeParse(req.body);
   if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid request update', 422);
@@ -86,6 +91,7 @@ api.patch('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) =
   return result(res, req.requestId, updated);
 });
 
+// Cancel only a caller-owned pending request and record the state transition atomically.
 api.post('/requests/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const cancelled = await withTransaction(async (client) => {
@@ -100,11 +106,13 @@ api.post('/requests/:id/cancel', requireAuth, async (req: AuthenticatedRequest, 
   } catch { return failure(res, req.requestId, 'NOT_FOUND_OR_NOT_PENDING', 'Request cannot be cancelled', 409); }
 });
 
+// Manager queue is restricted to requests assigned to the authenticated manager.
 api.get('/approvals', requireAuth, async (req: AuthenticatedRequest, res) => {
   const r = await query(`SELECT id,type,title,description,status,version,owner_id AS "ownerId",department_id AS "departmentId",created_at AS "createdAt" FROM app.requests WHERE assigned_manager_id=$1 AND status='PENDING' ORDER BY created_at`, [req.user!.id]);
   return result(res, req.requestId, r.rows);
 });
 
+// Shared approval implementation prevents self-approval and makes the final decision single-writer.
 async function decideRequest(req: AuthenticatedRequest, res: any, decision: 'APPROVED'|'REJECTED') {
   const schema = z.object({ expectedVersion: z.number().int().positive(), comment: z.string().max(2000).default(''), reason: z.string().trim().min(1).max(2000).optional() });
   const parsed = schema.safeParse(req.body);
@@ -136,6 +144,7 @@ async function decideRequest(req: AuthenticatedRequest, res: any, decision: 'APP
 api.post('/requests/:id/approve', requireAuth, (req, res) => decideRequest(req as AuthenticatedRequest, res, 'APPROVED'));
 api.post('/requests/:id/reject', requireAuth, (req, res) => decideRequest(req as AuthenticatedRequest, res, 'REJECTED'));
 
+// Submit a privileged role change; granting/revoking is deferred to independent review.
 api.post('/access/role-change-requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   const parsed = roleRequestSchema.safeParse(req.body);
   if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid role change request', 422);
@@ -151,6 +160,7 @@ api.post('/access/role-change-requests', requireAuth, async (req: AuthenticatedR
   } catch { return failure(res, req.requestId, 'ROLE_REQUEST_FAILED', 'Could not create role change request', 409); }
 });
 
+// Reviewers see the queue; ordinary users see only requests they submitted or target them.
 api.get('/access/role-change-requests', requireAuth, async (req: AuthenticatedRequest, res) => {
   const review = await requirePermission(req.user!.id, 'roles:approve');
   const r = await query(`SELECT rr.id,rr.target_user_id AS "targetUserId",rr.requested_by AS "requestedBy",ro.code AS "roleCode",rr.operation,rr.reason,rr.status,rr.version,rr.created_at AS "createdAt"
@@ -158,6 +168,7 @@ api.get('/access/role-change-requests', requireAuth, async (req: AuthenticatedRe
   return result(res, req.requestId, r.rows);
 });
 
+// Apply an independent role decision and invalidate the target's sessions when approved.
 async function decideRoleChange(req: AuthenticatedRequest, res: any, decision: 'APPROVED'|'REJECTED') {
   const body = z.object({ comment: z.string().trim().min(decision === 'REJECTED' ? 1 : 0).max(2000).default('') }).safeParse(req.body);
   if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Comment is required', 422);
@@ -189,6 +200,7 @@ async function decideRoleChange(req: AuthenticatedRequest, res: any, decision: '
 api.post('/admin/role-change-requests/:id/approve', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'APPROVED'));
 api.post('/admin/role-change-requests/:id/reject', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'REJECTED'));
 
+// MFA routes keep the TOTP seed server-side and expose recovery codes only at confirmation time.
 api.post('/auth/mfa/enroll', requireAuth, async (req: AuthenticatedRequest, res) => result(res, req.requestId, await beginMfaEnrollment(req.user!.id)));
 api.post('/auth/mfa/confirm', requireAuth, async (req: AuthenticatedRequest, res) => {
   const code = z.string().regex(/^\d{6}$/).safeParse(req.body?.code);
@@ -202,13 +214,16 @@ api.post('/auth/mfa/challenge', requireAuth, async (req: AuthenticatedRequest, r
   if (!code.success || !(await verifyMfa(req.user!.id, code.data))) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
   return result(res, req.requestId, { mfaVerified: true });
 });
+// Session metadata is safe to display because it excludes session tokens and refresh secrets.
 api.get('/auth/sessions', requireAuth, async (req: AuthenticatedRequest, res) => {
   const sessions = await query('SELECT id,expires_at AS "expiresAt",ip_address AS "ipAddress",user_agent AS "userAgent",created_at AS "createdAt",updated_at AS "updatedAt" FROM auth.session WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC', [req.user!.id]);
   return result(res, req.requestId, sessions.rows);
 });
+// Revoke one owned session or all sessions for logout-all/password-change behavior.
 api.delete('/auth/sessions/:id', requireAuth, async (req: AuthenticatedRequest, res) => { await revokeSession(req.user!.id, String(req.params.id)); return res.status(204).send(); });
 api.post('/auth/sessions/revoke-all', requireAuth, async (req: AuthenticatedRequest, res) => { await query('UPDATE auth.session SET revoked_at=now() WHERE user_id=$1', [req.user!.id]); return result(res, req.requestId, { revoked: true }); });
 
+// Audit reads and integrity checks are protected by separate fresh permissions.
 api.get('/admin/audit', requireAuth, async (req: AuthenticatedRequest, res) => {
   if (!(await requirePermission(req.user!.id, 'audit:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit access required', 403);
   const r = await query('SELECT sequence,actor_user_id AS "actorId",action,resource_type AS "resourceType",resource_id AS "resourceId",outcome,created_at AS "occurredAt",correlation_id AS "correlationId",entry_hash AS "entryHash" FROM app.audit_events ORDER BY sequence DESC LIMIT 100');
@@ -218,6 +233,7 @@ api.get('/admin/audit/integrity', requireAuth, async (req: AuthenticatedRequest,
   if (!(await requirePermission(req.user!.id, 'audit:verify'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit verification access required', 403);
   return result(res, req.requestId, await verifyAuditChain());
 });
+// Security alert routes provide restricted evidence and acknowledgement operations.
 api.get('/admin/alerts', requireAuth, async (req: AuthenticatedRequest, res) => {
   if (!(await requirePermission(req.user!.id, 'alerts:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Alert access required', 403);
   const r = await query('SELECT id,alert_type AS rule,severity,details,acknowledged_at AS "acknowledgedAt",created_at AS "createdAt" FROM app.security_alerts ORDER BY created_at DESC LIMIT 100');
@@ -237,6 +253,7 @@ api.get('/notifications', requireAuth, async (req: AuthenticatedRequest, res) =>
   const r = await query('SELECT id,type,title,body,status,read_at AS "readAt",created_at AS "createdAt" FROM app.notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100', [req.user!.id]);
   return result(res, req.requestId, r.rows);
 });
+// Notifications are always filtered by user ID so one user cannot mark another user's message read.
 api.patch('/notifications/:id/read', requireAuth, async (req: AuthenticatedRequest, res) => {
   await query('UPDATE app.notifications SET status=\'READ\',read_at=now() WHERE id=$1 AND user_id=$2', [req.params.id, req.user!.id]);
   return result(res, req.requestId, { id: req.params.id, status: 'READ' });

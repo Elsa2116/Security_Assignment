@@ -8,8 +8,10 @@ import { pool, withTransaction } from '../db/pool.js';
 
 const execFileAsync = promisify(execFile);
 const backupDir = path.resolve(process.env.BACKUP_DIR ?? './backups');
+// Derive the encryption key locally; production should replace this with a KMS envelope key.
 function key() { return crypto.createHash('sha256').update(config.BACKUP_ENCRYPTION_KEY).digest(); }
 
+// Produce an encrypted pg_dump artifact, checksum it, and persist its manifest/audit record.
 export async function createEncryptedFullBackup() {
   await mkdir(backupDir, { recursive: true });
   const started = new Date();
@@ -30,6 +32,7 @@ export async function createEncryptedFullBackup() {
   return { storageKey, checksum, bytes: payload.byteLength };
 }
 
+// Verify both the artifact checksum and AES-GCM authentication tag before accepting a backup.
 export async function verifyEncryptedBackup(storageKey: string, expectedChecksum: string) {
   const payload = await readFile(path.join(backupDir, storageKey));
   const checksum = crypto.createHash('sha256').update(payload).digest('hex');

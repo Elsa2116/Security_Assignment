@@ -7,8 +7,10 @@ import { query } from './db/pool.js';
 import { api } from './api.js';
 
 const app = express();
+// Helmet provides baseline browser security headers for every response.
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
+// Enforce same-origin or explicit CSRF proof on state-changing application routes.
 app.use((req, res, next) => {
   const requestId = req.header('x-request-id') || crypto.randomUUID();
   res.setHeader('x-request-id', requestId);
@@ -22,11 +24,13 @@ app.use((req, res, next) => {
 });
 app.use('/api/v1', api);
 
+// Liveness also checks PostgreSQL because the API is not useful without its database.
 app.get('/health', async (_req, res) => {
   try { await query('SELECT 1'); res.json({ status: 'ok', database: 'ok' }); }
   catch { res.status(503).json({ status: 'unavailable' }); }
 });
 
+// Delegate all authentication routes to Better Auth; SecureFlow does not duplicate them.
 app.all('/api/auth/{*splat}', async (req, res) => {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);

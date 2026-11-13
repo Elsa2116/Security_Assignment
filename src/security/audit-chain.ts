@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 
 type AuditInput = { actorId?: string; action: string; resourceType: string; resourceId?: string; outcome: 'success' | 'failure'; ipAddress?: string; userAgent?: string; correlationId?: string; metadata?: Record<string, unknown> };
 
+// Append one immutable audit record whose hash commits to the preceding record.
 export async function appendAudit(client: PoolClient, event: AuditInput) {
   const previous = await client.query<{ entry_hash: string | null }>('SELECT entry_hash FROM app.audit_events ORDER BY sequence DESC NULLS LAST LIMIT 1');
   const previousHash = previous.rows[0]?.entry_hash ?? '';
@@ -16,6 +17,7 @@ export async function appendAudit(client: PoolClient, event: AuditInput) {
   return entryHash;
 }
 
+// Recalculate the chain from PostgreSQL and return the first broken sequence, if any.
 export async function verifyAuditChain() {
   const { query } = await import('../db/pool.js');
   const rows = await query<{ sequence: string; entry_hash: string; previous_hash: string; actor_user_id: string | null; action: string; resource_type: string; resource_id: string | null; outcome: string; metadata: Record<string, unknown> }>('SELECT sequence,entry_hash,previous_hash,actor_user_id,action,resource_type,resource_id,outcome,metadata FROM app.audit_events ORDER BY sequence');
