@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "better-auth": "latest",
-    "argon2": "latest",
+    "bcryptjs": "latest",
     "@aws-sdk/client-s3": "latest",
     "dotenv": "latest",
     "express": "latest",

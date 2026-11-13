@@ -5,38 +5,58 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SecureFlow</title>
   <style>
-    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background:#0f172a; color:#e2e8f0; }
-    body { margin:0; min-height:100vh; background:linear-gradient(135deg,#0f172a,#172554); }
-    main { width:min(100% - 32px, 960px); margin:0 auto; padding:42px 0; }
-    header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:28px; }
-    h1 { margin:0; color:#93c5fd; } h2 { margin-top:0; }
+    :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:#172033; background:#f5f8fc; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 10% 0%,#dbeafe 0,#f5f8fc 42%,#eef2f7 100%); }
+    main { width:min(100% - 32px, 1080px); margin:0 auto; padding:28px 0 54px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:30px; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .brand-mark { display:grid; place-items:center; width:42px; height:42px; border-radius:12px; color:#fff; background:linear-gradient(135deg,#2563eb,#0f4cbd); font-weight:800; font-size:21px; box-shadow:0 8px 20px #2563eb3d; }
+    h1 { margin:0; color:#14213d; font-size:1.35rem; letter-spacing:-.03em; } h2 { margin:0 0 8px; color:#172033; font-size:1.5rem; letter-spacing:-.03em; }
+    .brand-copy { color:#64748b; font-size:.82rem; margin-top:2px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; }
-    .card { background:#111827dd; border:1px solid #334155; border-radius:16px; padding:22px; box-shadow:0 16px 40px #02061755; }
-    label { display:block; margin:12px 0 6px; color:#cbd5e1; font-size:.9rem; }
-    input, select, textarea { box-sizing:border-box; width:100%; padding:11px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#f8fafc; }
-    textarea { min-height:80px; resize:vertical; } button { margin-top:14px; padding:11px 15px; border:0; border-radius:8px; cursor:pointer; background:#2563eb; color:white; font-weight:700; } button.secondary { background:#475569; }
-    #status { min-height:24px; margin:14px 0; color:#fbbf24; white-space:pre-wrap; } #dashboard { display:none; }
-    pre { overflow:auto; background:#020617; padding:12px; border-radius:8px; color:#bfdbfe; } .muted { color:#94a3b8; }
+    .auth-layout { display:grid; grid-template-columns:1fr 440px; align-items:center; gap:74px; max-width:980px; margin:72px auto 0; }
+    .auth-intro h2 { font-size:2.7rem; line-height:1.08; margin-bottom:18px; max-width:480px; }
+    .auth-intro p { color:#64748b; font-size:1.05rem; line-height:1.7; max-width:500px; }
+    .intro-points { display:grid; gap:12px; margin-top:28px; color:#334155; font-size:.93rem; }
+    .intro-point { display:flex; gap:10px; align-items:center; }
+    .intro-point span { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; color:#1d4ed8; background:#dbeafe; font-size:.8rem; font-weight:800; }
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:20px; padding:30px; box-shadow:0 20px 55px #1e3a8a12; }
+    .auth-card { width:100%; }
+    .form-copy { margin:0 0 20px; color:#64748b; font-size:.9rem; line-height:1.55; }
+    label { display:block; margin:15px 0 7px; color:#334155; font-size:.84rem; font-weight:650; }
+    input, select, textarea { box-sizing:border-box; width:100%; padding:12px 13px; border-radius:9px; border:1px solid #cbd5e1; background:#fff; color:#172033; font:inherit; outline:none; transition:border .2s,box-shadow .2s; }
+    input:focus, select:focus, textarea:focus { border-color:#2563eb; box-shadow:0 0 0 3px #2563eb1f; }
+    textarea { min-height:80px; resize:vertical; } button { margin-top:18px; padding:12px 17px; border:0; border-radius:9px; cursor:pointer; background:#1d5bd7; color:white; font:inherit; font-weight:700; transition:background .2s,transform .2s; } button:hover { background:#1748ae; transform:translateY(-1px); } button.secondary { background:#e8eef8; color:#1d4ed8; margin-top:0; }
+    .form-footer { text-align:center; margin:22px 0 0; color:#64748b; font-size:.88rem; } .form-footer a { color:#1d5bd7; font-weight:700; text-decoration:none; } .form-footer a:hover { text-decoration:underline; }
+    .security-note { display:flex; align-items:center; gap:8px; margin-top:20px; padding-top:16px; border-top:1px solid #eef2f7; color:#94a3b8; font-size:.76rem; }
+    .auth-form.hidden { display:none; }
+    #status { min-height:24px; margin:14px 0; color:#b7791f; white-space:pre-wrap; text-align:center; } #dashboard { display:none; }
+    pre { overflow:auto; background:#0f172a; padding:12px; border-radius:8px; color:#bfdbfe; } .muted { color:#64748b; }
+    @media (max-width:760px) { main { padding-top:20px; } .auth-layout { display:block; margin-top:36px; } .auth-intro { margin-bottom:28px; } .auth-intro h2 { font-size:2.1rem; } .intro-points { display:none; } .auth-card { max-width:480px; margin:0 auto; } }
   </style>
 </head>
 <body>
 <main>
-  <header><div><h1>SecureFlow</h1><div class="muted">Secure request and approval management</div></div><button id="logout" class="secondary" hidden>Sign out</button></header>
+  <header><div class="brand"><div class="brand-mark">S</div><div><h1>SecureFlow</h1><div class="brand-copy">Secure request and approval management</div></div></div><button id="logout" class="secondary" hidden>Sign out</button></header>
   <div id="status"></div>
-  <section id="auth" class="grid">
-    <form id="register" class="card">
-      <h2>Register employee</h2><p class="muted">Your account remains pending admission until verification and organization approval.</p>
+  <section id="auth" class="auth-layout">
+    <div class="auth-intro"><h2>Make every request move with confidence.</h2><p>SecureFlow gives your organization one trusted place to submit, review, and approve sensitive workplace requests.</p><div class="intro-points"><div class="intro-point"><span>✓</span>Verified identities and secure access</div><div class="intro-point"><span>✓</span>Clear approval trails for every decision</div><div class="intro-point"><span>✓</span>Built for responsible teams</div></div></div>
+    <div class="card auth-card">
+    <form id="register" class="auth-form">
+      <h2>Create your account</h2><p class="form-copy">Register as an employee to get started. Your account will be activated after verification and organization admission.</p>
       <label for="reg-name">Name</label><input id="reg-name" required autocomplete="name">
       <label for="reg-email">Email</label><input id="reg-email" type="email" required autocomplete="email">
       <label for="reg-password">Password</label><input id="reg-password" type="password" minlength="12" required autocomplete="new-password">
-      <button>Register</button>
+      <button>Create account</button><p class="form-footer">Already have an account? <a href="#" id="show-login">Sign in</a></p><div class="security-note">▣ Your information is protected with enterprise-grade security.</div>
     </form>
-    <form id="login" class="card">
-      <h2>Sign in</h2><p class="muted">Verification emails are available in Mailpit at port 8025 during local development.</p>
+    <form id="login" class="auth-form hidden">
+      <h2>Welcome back</h2><p class="form-copy">Sign in to securely manage your requests and approvals.</p>
       <label for="login-email">Email</label><input id="login-email" type="email" required autocomplete="email">
       <label for="login-password">Password</label><input id="login-password" type="password" required autocomplete="current-password">
-      <button>Sign in</button>
+      <button>Sign in</button><p class="form-footer">New to SecureFlow? <a href="#" id="show-register">Create an account</a></p><div class="security-note">▣ Secure sign-in with protected sessions.</div>
     </form>
+    </div>
   </section>
   <section id="dashboard" class="grid">
     <div class="card"><h2>Dashboard</h2><pre id="profile"></pre></div>
@@ -55,6 +75,10 @@
 const statusBox = document.querySelector('#status');
 // Show non-sensitive feedback from the API without exposing response internals.
 const showStatus = (message, error=false) => { statusBox.textContent = message; statusBox.style.color = error ? '#fca5a5' : '#fbbf24'; };
+// Switch between the focused registration and sign-in states without duplicating pages.
+function showAuthForm(form) { document.querySelector('#register').classList.toggle('hidden', form !== 'register'); document.querySelector('#login').classList.toggle('hidden', form !== 'login'); statusBox.textContent = ''; }
+document.querySelector('#show-login').addEventListener('click', event => { event.preventDefault(); showAuthForm('login'); });
+document.querySelector('#show-register').addEventListener('click', event => { event.preventDefault(); showAuthForm('register'); });
 // Send same-origin JSON requests while preserving Better Auth cookies.
 async function api(path, options={}) {
   const response = await fetch(path, { credentials:'include', ...options, headers:{ 'Content-Type':'application/json', ...(options.headers||{}) } });
