@@ -166,6 +166,7 @@ async function loadDashboard() {
     document.querySelector('#admin-nav').hidden = !admin;
     // Keep role boundaries visible in the UI: admins manage workflows, employees submit them.
     document.querySelector('#new-request-nav').hidden = admin;
+    document.querySelector('#my-requests-nav').hidden = admin;
     document.querySelector('#request-form').hidden = admin;
     if (admin) {
       document.querySelector('#admin-nav').click();
