@@ -1,6 +1,16 @@
 // Keep browser behavior intentionally small: all identity and data decisions remain server-side.
 const statusBox = document.querySelector('#status');
 
+// Toggle password visibility locally; the value is never sent anywhere except the auth request.
+document.querySelectorAll('.toggle-password').forEach(button => {
+  button.addEventListener('click', () => {
+    const input = document.querySelector(`#${button.dataset.target}`);
+    const visible = input.type === 'text';
+    input.type = visible ? 'password' : 'text';
+    button.textContent = visible ? 'Show' : 'Hide';
+  });
+});
+
 // Show non-sensitive feedback from the API without exposing response internals.
 const showStatus = (message, error = false) => {
   statusBox.textContent = message;
@@ -60,12 +70,19 @@ async function loadDashboard() {
 document.querySelector('#register').addEventListener('submit', async event => {
   event.preventDefault();
   try {
+    const password = document.querySelector('#reg-password').value;
+    const confirmation = document.querySelector('#reg-confirm-password').value;
+    if (password !== confirmation) {
+      showStatus('Passwords do not match. Please check both fields.', true);
+      return;
+    }
     const data = await api('/api/auth/sign-up/email', {
       method: 'POST',
       body: JSON.stringify({
         name: document.querySelector('#reg-name').value,
         email: document.querySelector('#reg-email').value,
-        password: document.querySelector('#reg-password').value,
+        password,
+        confirmPassword: confirmation,
         captchaToken: 'local-development-captcha'
       })
     });

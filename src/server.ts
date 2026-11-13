@@ -38,8 +38,11 @@ app.get('/health', async (_req, res) => {
 app.all('/api/auth/{*splat}', async (req, res) => {
   // Registration requires CAPTCHA in production; the UI uses the explicit local token only in development.
   if (req.path.endsWith('/sign-up/email')) {
+    // Validate confirmation on the server too; browser checks alone are not trusted.
+    if (typeof req.body?.password !== 'string' || req.body.password !== req.body?.confirmPassword) return res.status(422).json({ error: { code: 'PASSWORD_MISMATCH', message: 'Passwords do not match' } });
     const captchaValid = await verifyCaptcha(req.body?.captchaToken || req.header('x-captcha-token'), req.ip ?? undefined);
     if (!captchaValid) return res.status(422).json({ error: { code: 'CAPTCHA_REQUIRED', message: 'CAPTCHA verification failed' } });
+    delete req.body.confirmPassword;
   }
   // Protect the login endpoint before Better Auth performs password work.
   if (req.path.endsWith('/sign-in/email') && isRateLimited(`${String(req.body?.email ?? '').toLowerCase()}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });

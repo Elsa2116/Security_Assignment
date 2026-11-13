@@ -26,6 +26,9 @@
     .form-copy { margin:0 0 20px; color:#64748b; font-size:.9rem; line-height:1.55; }
     label { display:block; margin:15px 0 7px; color:#334155; font-size:.84rem; font-weight:650; }
     input, select, textarea { box-sizing:border-box; width:100%; padding:12px 13px; border-radius:9px; border:1px solid #cbd5e1; background:#fff; color:#172033; font:inherit; outline:none; transition:border .2s,box-shadow .2s; }
+    .input-wrap { position:relative; } .input-wrap input { padding-right:74px; }
+    .toggle-password { position:absolute; right:7px; top:5px; margin:0; padding:7px 8px; border:0; background:transparent; color:#1d5bd7; font-size:.78rem; font-weight:700; }
+    .toggle-password:hover { background:#eef4ff; transform:none; }
     input:focus, select:focus, textarea:focus { border-color:#2563eb; box-shadow:0 0 0 3px #2563eb1f; }
     textarea { min-height:80px; resize:vertical; } button { margin-top:18px; padding:12px 17px; border:0; border-radius:9px; cursor:pointer; background:#1d5bd7; color:white; font:inherit; font-weight:700; transition:background .2s,transform .2s; } button:hover { background:#1748ae; transform:translateY(-1px); } button.secondary { background:#e8eef8; color:#1d4ed8; margin-top:0; }
     .form-footer { text-align:center; margin:22px 0 0; color:#64748b; font-size:.88rem; } .form-footer a { color:#1d5bd7; font-weight:700; text-decoration:none; } .form-footer a:hover { text-decoration:underline; }
@@ -47,13 +50,15 @@
       <h2>Create your account</h2><p class="form-copy">Register as an employee to get started. Your account will be activated after verification and organization admission.</p>
       <label for="reg-name">Name</label><input id="reg-name" required autocomplete="name">
       <label for="reg-email">Email</label><input id="reg-email" type="email" required autocomplete="email">
-      <label for="reg-password">Password</label><input id="reg-password" type="password" minlength="12" required autocomplete="new-password">
+      <label for="reg-password">Password</label><div class="input-wrap"><input id="reg-password" type="password" minlength="12" required autocomplete="new-password"><button type="button" class="toggle-password" data-target="reg-password">Show</button></div>
+      <label for="reg-confirm-password">Confirm password</label><div class="input-wrap"><input id="reg-confirm-password" type="password" minlength="12" required autocomplete="new-password"><button type="button" class="toggle-password" data-target="reg-confirm-password">Show</button></div>
+      <p class="muted" style="font-size:.78rem;margin:8px 0 0">Use at least 12 characters. Your password is stored using bcrypt hashing.</p>
       <button>Create account</button><p class="form-footer">Already have an account? <a href="#" id="show-login">Sign in</a></p><div class="security-note">▣ Your information is protected with enterprise-grade security.</div>
     </form>
     <form id="login" class="auth-form hidden">
       <h2>Welcome back</h2><p class="form-copy">Sign in to securely manage your requests and approvals.</p>
       <label for="login-email">Email</label><input id="login-email" type="email" required autocomplete="email">
-      <label for="login-password">Password</label><input id="login-password" type="password" required autocomplete="current-password">
+      <label for="login-password">Password</label><div class="input-wrap"><input id="login-password" type="password" required autocomplete="current-password"><button type="button" class="toggle-password" data-target="login-password">Show</button></div>
       <button>Sign in</button><p class="form-footer">New to SecureFlow? <a href="#" id="show-register">Create an account</a></p><div class="security-note">▣ Secure sign-in with protected sessions.</div>
     </form>
     </div>
