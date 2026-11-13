@@ -14,8 +14,11 @@ const processOutbox = async () => {
       try {
         if (row.event_type === 'EMAIL_VERIFICATION' || row.event_type === 'PASSWORD_RESET') await deliverEmail(row.event_type, row.payload);
         await client.query(`UPDATE app.outbox_events SET status='DELIVERED',attempt_count=attempt_count+1 WHERE id=$1`, [row.id]);
-      } catch {
+      } catch (error) {
         // Retry later with bounded exponential backoff; failed delivery remains observable in the outbox.
+        // Log only a sanitized SMTP error so delivery failures are diagnosable without leaking credentials or verification tokens.
+        const smtpError = error as { code?: string; responseCode?: number; command?: string };
+        console.error(JSON.stringify({ event: 'worker.email_failed', eventType: row.event_type, code: smtpError.code ?? 'SMTP_DELIVERY_FAILED', responseCode: smtpError.responseCode ?? null, command: smtpError.command ?? null }));
         await client.query(`UPDATE app.outbox_events SET status='FAILED',attempt_count=attempt_count+1,next_attempt_at=now()+(LEAST(attempt_count+1,6) * interval '1 minute') WHERE id=$1`, [row.id]);
       }
     }

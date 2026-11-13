@@ -159,6 +159,10 @@
     .form-grid button { width:max-content; }
     .form-footer { text-align:center; margin:22px 0 0; color:#64748b; font-size:.88rem; } .form-footer a { color:#1d5bd7; font-weight:700; text-decoration:none; } .form-footer a:hover { text-decoration:underline; }
     .security-note { display:flex; align-items:center; gap:8px; margin-top:20px; padding-top:16px; border-top:1px solid #eef2f7; color:#94a3b8; font-size:.76rem; }
+    .password-meter { height:5px; margin-top:8px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
+    .password-meter > div { height:100%; width:0; background:#ef4444; transition:width .2s ease, background .2s ease; }
+    .password-meter > div[data-score="3"] { background:#f59e0b; }
+    .password-meter > div[data-score="4"], .password-meter > div[data-score="5"] { background:#16a34a; }
     .auth-form.hidden { display:none; }
     #status { display:none; min-height:24px; margin:14px 0; color:#b7791f; white-space:pre-wrap; text-align:center; } #dashboard { display:none; }
     pre { overflow:auto; background:#0f172a; padding:12px; border-radius:8px; color:#bfdbfe; } .muted { color:#64748b; }
@@ -178,6 +182,7 @@
       <label for="reg-name">Name</label><input id="reg-name" required autocomplete="name">
       <label for="reg-email">Email</label><input id="reg-email" type="email" required autocomplete="email">
       <label for="reg-password">Password</label><div class="input-wrap"><input id="reg-password" type="password" minlength="12" required autocomplete="new-password"><button type="button" class="toggle-password" data-target="reg-password" aria-label="Show password" title="Show password"></button></div>
+        <div class="password-meter" aria-live="polite"><div id="password-strength-bar"></div></div><p id="password-strength-text" class="muted" style="font-size:.78rem;margin:4px 0 0">Use 12+ characters with uppercase, lowercase, number, and symbol.</p>
       <label for="reg-confirm-password">Confirm password</label><div class="input-wrap"><input id="reg-confirm-password" type="password" minlength="12" required autocomplete="new-password"><button type="button" class="toggle-password" data-target="reg-confirm-password" aria-label="Show password" title="Show password"></button></div>
       <p class="muted" style="font-size:.78rem;margin:8px 0 0">Use at least 12 characters. Your password is stored using bcrypt hashing.</p>
       <button>Create account</button><p class="form-footer">Already have an account? <a href="#" id="show-login">Sign in</a></p><div class="security-note">▣ Your information is protected with enterprise-grade security.</div>

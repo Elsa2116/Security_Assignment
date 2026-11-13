@@ -22,7 +22,8 @@
     "defense:check": "tsx scripts/defense-check.ts",
     "backup:full": "tsx scripts/backup-full.ts",
     "backup:verify": "tsx scripts/verify-backup.ts",
-    "restore:test": "tsx scripts/restore-test.ts"
+    "restore:test": "tsx scripts/restore-test.ts",
+    "restore:isolated": "tsx scripts/restore-isolated.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "latest",

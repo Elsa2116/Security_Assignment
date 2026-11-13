@@ -28,10 +28,18 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      EMAIL_FROM: SecureFlow <no-reply@secureflow.local>
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-SecureFlow <no-reply@secureflow.local>}
       HIBP_PASSWORD_CHECK: ${HIBP_PASSWORD_CHECK:-false}
+      OBJECT_STORAGE_ENDPOINT_URL: ${OBJECT_STORAGE_ENDPOINT_URL:-}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-}
+      OBJECT_STORAGE_RETENTION_DAYS: ${OBJECT_STORAGE_RETENTION_DAYS:-30}
     ports:
       - "3000:3000"
     # Persist encrypted backup files on the host for local verification and restore drills.
@@ -80,15 +88,42 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      EMAIL_FROM: SecureFlow <no-reply@secureflow.local>
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-SecureFlow <no-reply@secureflow.local>}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
     command: ["node", "dist/src/workers/index.js"]
+
+  # Optional local scheduler; start with `docker compose --profile backup up -d backup`.
+  backup:
+    build: .
+    profiles: ["backup"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://secureflow:secureflow_dev_password@postgres:5432/secureflow
+      JWT_ACCESS_SECRET: replace-with-at-least-32-random-characters
+      BETTER_AUTH_SECRET: replace-with-at-least-32-random-characters
+      BETTER_AUTH_URL: http://localhost:3000
+      BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+      BACKUP_DIR: /app/backups
+      OBJECT_STORAGE_ENDPOINT_URL: ${OBJECT_STORAGE_ENDPOINT_URL:-}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-}
+      OBJECT_STORAGE_RETENTION_DAYS: ${OBJECT_STORAGE_RETENTION_DAYS:-30}
+    volumes:
+      - ./backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "while true; do node dist/scripts/backup-full.js || true; sleep 86400; done"]
 
 volumes:
   secureflow-postgres:

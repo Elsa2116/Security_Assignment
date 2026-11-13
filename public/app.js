@@ -28,6 +28,18 @@ document.querySelectorAll('.toggle-password').forEach(button => {
   });
 });
 
+// Show password policy strength locally so users can correct mistakes before submitting; no password is logged or persisted here.
+document.querySelector('#reg-password').addEventListener('input', event => {
+  const value = event.target.value;
+  const score = [value.length >= 12, /[a-z]/.test(value), /[A-Z]/.test(value), /[0-9]/.test(value), /[^A-Za-z0-9]/.test(value)].filter(Boolean).length;
+  const labels = ['Enter a password', 'Very weak', 'Weak', 'Good', 'Strong', 'Strong'];
+  const bar = document.querySelector('#password-strength-bar');
+  const text = document.querySelector('#password-strength-text');
+  bar.style.width = `${score * 20}%`;
+  bar.dataset.score = String(score);
+  text.textContent = labels[score] || labels[0];
+});
+
 let statusTimer;
 // Show short-lived non-sensitive feedback from the API without exposing response internals.
 const showStatus = (message, error = false) => {

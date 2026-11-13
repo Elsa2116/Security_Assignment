@@ -20,8 +20,17 @@ async function isBreachedPassword(password: string) {
   const suffix = digest.slice(5);
   return (await response.text()).split('\n').some(line => line.split(':')[0]?.trim() === suffix);
 }
-// Helmet provides baseline browser security headers for every response.
-app.use(helmet());
+// Helmet provides baseline browser security headers; HSTS is enabled only after production HTTPS is configured.
+app.use(helmet({
+  hsts: config.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], objectSrc: ["'none'"],
+      baseUri: ["'self'"], frameAncestors: ["'none'"]
+    }
+  }
+}));
 app.use(express.json({ limit: '1mb' }));
 // Serve the browser UI from the same origin and prevent stale authentication JavaScript from being cached.
 app.use(express.static('public', { setHeaders: (res, filePath) => { if (filePath.endsWith('.html') || filePath.endsWith('.js')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); } }));
@@ -51,6 +60,9 @@ app.all('/api/auth/{*splat}', async (req, res) => {
   if (req.path.endsWith('/sign-up/email')) {
     // Validate confirmation on the server too; browser checks alone are not trusted.
     if (typeof req.body?.password !== 'string' || req.body.password !== req.body?.confirmPassword) return res.status(422).json({ error: { code: 'PASSWORD_MISMATCH', message: 'Passwords do not match' } });
+    // Enforce the documented 12-character policy and complexity on the server, not only in the browser.
+    const password = String(req.body.password);
+    if (password.length < 12 || password.length > 128 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) return res.status(422).json({ error: { code: 'PASSWORD_POLICY', message: 'Use 12–128 characters with uppercase, lowercase, number, and symbol' } });
     const captchaValid = await verifyCaptcha(req.body?.captchaToken || req.header('x-captcha-token'), req.ip ?? undefined);
     if (!captchaValid) return res.status(422).json({ error: { code: 'CAPTCHA_REQUIRED', message: 'CAPTCHA verification failed' } });
     try {
@@ -61,7 +73,12 @@ app.all('/api/auth/{*splat}', async (req, res) => {
     delete req.body.confirmPassword;
   }
   // Protect the login endpoint before Better Auth performs password work.
-  if (req.path.endsWith('/sign-in/email') && isRateLimited(`${String(req.body?.email ?? '').toLowerCase()}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });
+  if (req.path.endsWith('/sign-in/email')) {
+    const loginEmail = String(req.body?.email ?? '').trim().toLowerCase();
+    if (isRateLimited(`${loginEmail}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });
+    const locked = await query('SELECT 1 FROM app.user_profiles WHERE email_normalized=$1 AND locked_until > now()', [loginEmail]);
+    if (locked.rowCount) return res.status(423).json({ error: { code: 'ACCOUNT_LOCKED', message: 'Sign-in is temporarily unavailable; try again later' } });
+  }
   // Keep resend requests generic and enforce a one-minute per-email cooldown without revealing account existence.
   if (req.path.endsWith('/send-verification-email')) {
     const email = String(req.body?.email ?? '').trim().toLowerCase();

@@ -1,10 +1,16 @@
+import dns from 'node:dns';
 import nodemailer from 'nodemailer';
+
+// Prefer IPv4 for local Docker environments whose IPv6 route can fail before SMTP negotiation.
+dns.setDefaultResultOrder('ipv4first');
 
 // Mailpit is used locally; production must provide an authenticated TLS SMTP provider.
 const transport = nodemailer.createTransport({
   host: process.env.SMTP_HOST ?? 'mailpit',
   port: Number(process.env.SMTP_PORT ?? 1025),
-  secure: false,
+  // SMTP providers use implicit TLS on 465 and STARTTLS on 587; Mailpit remains local plain SMTP.
+  secure: Number(process.env.SMTP_PORT ?? 1025) === 465,
+  requireTLS: Number(process.env.SMTP_PORT ?? 1025) === 587,
   auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD ?? '' } : undefined
 });
 
