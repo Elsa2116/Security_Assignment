@@ -193,10 +193,15 @@ async function loadDashboard() {
     document.querySelector('#workspace-subtitle').textContent = admin ? 'Review requests, manage members, and protect organization access.' : 'Submit and track requests with a clear approval trail.';
     document.querySelector('#process-title').textContent = admin ? 'Admin responsibilities' : 'How it works';
     document.querySelector('#process-copy').textContent = admin ? 'Review every decision with requester context, admit verified employees, and keep a complete audit trail for your organization.' : 'Submit a request with a clear business reason. Your organization approver reviews it, records a decision, and SecureFlow notifies you of the outcome.';
+    const requestedView = new URLSearchParams(window.location.search).get('view');
     if (admin) {
-      document.querySelector('#admin-nav').click();
+      const target = requestedView === 'settings' || requestedView === 'help' ? requestedView : 'admin';
+      document.querySelector(`[data-view="${target}"]`).click();
       void loadAdminPanel();
-    } else document.querySelector('[data-view="overview"]').click();
+    } else {
+      const target = ['overview', 'requests', 'new-request', 'settings', 'help'].includes(requestedView || '') ? requestedView : 'overview';
+      document.querySelector(`[data-view="${target}"]`).click();
+    }
     showStatus('Signed in.');
   } catch {
     // Anonymous visitors stay on the registration/sign-in view.
