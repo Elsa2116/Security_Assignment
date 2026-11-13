@@ -22,8 +22,8 @@ async function isBreachedPassword(password: string) {
 // Helmet provides baseline browser security headers for every response.
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
-// Serve the browser demonstration UI from the same origin so cookies and CSRF checks work consistently.
-app.use(express.static('public'));
+// Serve the browser UI from the same origin and prevent stale authentication JavaScript from being cached.
+app.use(express.static('public', { setHeaders: (res, filePath) => { if (filePath.endsWith('.html') || filePath.endsWith('.js')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); } }));
 // Enforce same-origin or explicit CSRF proof on state-changing application routes.
 app.use((req, res, next) => {
   const requestId = req.header('x-request-id') || crypto.randomUUID();

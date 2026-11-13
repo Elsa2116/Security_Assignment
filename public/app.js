@@ -351,6 +351,8 @@ document.querySelector('#reset-password').addEventListener('submit', async event
 // Sign in through Better Auth and then render the authenticated application state.
 document.querySelector('#login').addEventListener('submit', async event => {
   event.preventDefault();
+  // Keep the user on the sign-in form while the server validates credentials and the session.
+  showAuthForm('login');
   try {
     await api('/api/auth/sign-in/email', {
       method: 'POST',
