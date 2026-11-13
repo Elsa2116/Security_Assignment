@@ -45,6 +45,7 @@ function showAuthForm(form) {
   document.querySelector('#forgot-password').classList.toggle('hidden', form !== 'forgot-password');
   document.querySelector('#reset-password').classList.toggle('hidden', form !== 'reset-password');
   document.querySelector('#mfa-challenge').classList.toggle('hidden', form !== 'mfa-challenge');
+  document.querySelector('#verification-success').classList.toggle('hidden', form !== 'verification-success');
   statusBox.textContent = '';
   statusBox.style.display = 'none';
 }
@@ -143,6 +144,22 @@ document.querySelector('#reset-back-to-login').addEventListener('click', event =
 document.querySelector('#mfa-back-to-login').addEventListener('click', event => {
   event.preventDefault();
   showAuthForm('login');
+});
+let verificationEmail = '';
+let resendAvailableAt = 0;
+let resendTimer;
+function startResendCooldown() {
+  resendAvailableAt = Date.now() + 60_000;
+  clearInterval(resendTimer);
+  const button = document.querySelector('#resend-verification');
+  const countdown = document.querySelector('#resend-countdown');
+  button.disabled = true;
+  resendTimer = setInterval(() => { const remaining = Math.ceil((resendAvailableAt - Date.now()) / 1000); if (remaining <= 0) { clearInterval(resendTimer); button.disabled = false; countdown.textContent = ''; } else countdown.textContent = `You can request another email in ${remaining}s.`; }, 250);
+}
+document.querySelector('#verification-back-login').addEventListener('click', event => { event.preventDefault(); showAuthForm('login'); });
+document.querySelector('#resend-verification').addEventListener('click', async () => {
+  if (!verificationEmail || Date.now() < resendAvailableAt) return;
+  try { await api('/api/auth/send-verification-email', { method: 'POST', body: JSON.stringify({ email: verificationEmail, callbackURL: '/?verified=1' }) }); showStatus('If the account is eligible, a new verification email was sent.'); startResendCooldown(); } catch (error) { showStatus(error.message, true); }
 });
 
 // Send same-origin JSON requests while preserving Better Auth cookies.
@@ -331,7 +348,10 @@ document.querySelector('#register').addEventListener('submit', async event => {
         captchaToken: 'local-development-captcha'
       })
     });
-    showStatus(`Registered ${data.user.email}. Verify the email in Mailpit, then sign in.`);
+    verificationEmail = data.user.email;
+    document.querySelector('#verification-email').textContent = verificationEmail;
+    showAuthForm('verification-success');
+    startResendCooldown();
   } catch (error) {
     showStatus(error.message, true);
   }
@@ -376,7 +396,7 @@ document.querySelector('#login').addEventListener('submit', async event => {
     });
     await loadDashboard();
   } catch (error) {
-    showStatus(error.message, true);
+    if (error.code === 'EMAIL_NOT_VERIFIED') { verificationEmail = document.querySelector('#login-email').value.trim(); document.querySelector('#verification-email').textContent = verificationEmail; showAuthForm('verification-success'); resendAvailableAt = 0; document.querySelector('#resend-verification').disabled = false; } else showStatus(error.message, true);
   }
 });
 

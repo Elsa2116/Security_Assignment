@@ -204,6 +204,14 @@
       <label for="mfa-code">Authenticator code</label><input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" required maxlength="20">
       <button>Verify and continue</button><p class="form-footer"><a href="#" id="mfa-back-to-login">Sign in with another account</a></p>
     </form>
+    <section id="verification-success" class="auth-form hidden">
+      <h2>Check your email</h2>
+      <p class="form-copy">We sent a verification link to <strong id="verification-email"></strong>. Open your inbox and click <strong>Verify Email Address</strong> to activate your account.</p>
+      <p class="muted">The link expires after 15 minutes. Check your spam folder if you do not see it.</p>
+      <button id="resend-verification" type="button">Resend verification email</button>
+      <p id="resend-countdown" class="muted" aria-live="polite"></p>
+      <p class="form-footer"><a href="#" id="verification-back-login">Back to sign in</a></p>
+    </section>
     </div>
   </section>
   <div id="app-shell" class="app-shell">

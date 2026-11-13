@@ -9,6 +9,7 @@ import { verifyCaptcha } from './security/captcha.js';
 import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
 
 const app = express();
+const verificationResends = new Map<string, number>();
 
 // Check only the first five SHA-1 characters with HIBP's k-anonymity API; the password and full hash never leave this process.
 async function isBreachedPassword(password: string) {
@@ -61,9 +62,22 @@ app.all('/api/auth/{*splat}', async (req, res) => {
   }
   // Protect the login endpoint before Better Auth performs password work.
   if (req.path.endsWith('/sign-in/email') && isRateLimited(`${String(req.body?.email ?? '').toLowerCase()}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });
+  // Keep resend requests generic and enforce a one-minute per-email cooldown without revealing account existence.
+  if (req.path.endsWith('/send-verification-email')) {
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const now = Date.now();
+    if (verificationResends.get(email) && verificationResends.get(email)! > now) return res.status(429).json({ error: { code: 'VERIFICATION_COOLDOWN', message: 'Please wait before requesting another verification email' } });
+    verificationResends.set(email, now + 60_000);
+  }
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
   const response = await auth.handler(new Request(`${config.BETTER_AUTH_URL}${req.originalUrl}`, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body) }));
+  if (req.path.endsWith('/send-verification-email') && response.status >= 400) return res.status(200).json({ message: 'If the account is eligible, a verification email was sent.' });
+  if (req.path.endsWith('/sign-in/email') && response.status >= 400) {
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const unverified = await query('SELECT 1 FROM auth."user" WHERE lower(email)=$1 AND email_verified=false', [email]);
+    if (unverified.rowCount) return res.status(403).json({ error: { code: 'EMAIL_NOT_VERIFIED', message: 'Please verify your email address before signing in.' } });
+  }
   // Record only outcome metadata; password and token contents never enter logs or alerts.
   if (req.path.endsWith('/sign-in/email')) {
     const email = String(req.body?.email ?? '');

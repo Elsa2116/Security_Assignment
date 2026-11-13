@@ -30,6 +30,8 @@ export const auth = betterAuth({
     }
   },
   emailVerification: {
+    // Verification links are single-use and expire after 15 minutes.
+    expiresIn: 900,
     sendVerificationEmail: async ({ user, url }: { user: { id: string; email: string }; url: string }) => {
       // Return to the UI with an explicit success flag so verification is visible to the user.
       const verificationUrl = new URL(url, config.BETTER_AUTH_URL);
