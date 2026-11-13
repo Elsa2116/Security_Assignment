@@ -50,6 +50,8 @@ document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('cl
 // Overview quick actions use the same guarded navigation as the sidebar.
 document.querySelector('#overview-new-request').addEventListener('click', () => document.querySelector('[data-view="new-request"]').click());
 document.querySelector('#overview-my-requests').addEventListener('click', () => document.querySelector('[data-view="requests"]').click());
+document.querySelector('#overview-admin-console').addEventListener('click', () => document.querySelector('[data-view="admin"]').click());
+document.querySelector('#overview-admin-settings').addEventListener('click', () => document.querySelector('[data-view="settings"]').click());
 
 // Verification redirects back here with a safe, non-sensitive status marker.
 if (new URLSearchParams(window.location.search).get('verified') === '1') {
@@ -92,6 +94,10 @@ function csrfHeaders() {
 async function loadAdminPanel() {
   try {
     const [overview, members, directory] = await Promise.all([api('/api/v1/admin/overview'), api('/api/v1/admin/members'), api('/api/v1/admin/directory')]);
+    // Admin overview metrics come from the organization-wide SQL aggregate, not employee-owned requests.
+    document.querySelector('#stat-total').textContent = String(overview.totalRequests ?? 0);
+    document.querySelector('#stat-pending').textContent = String(overview.pendingRequests ?? 0);
+    document.querySelector('#stat-access').textContent = 'Admin';
     document.querySelector('#admin-pending-count').textContent = String(overview.pendingRequests ?? 0);
     document.querySelector('#admin-approved-count').textContent = String(overview.approvedRequests ?? 0);
     const pendingMembers = members.filter(member => member.status === 'PENDING_ADMISSION');
@@ -181,6 +187,12 @@ async function loadDashboard() {
     document.querySelector('#new-request-nav').hidden = admin;
     document.querySelector('#my-requests-nav').hidden = admin;
     document.querySelector('#request-form').hidden = admin;
+    document.querySelector('#employee-overview-copy').hidden = admin;
+    document.querySelector('#admin-overview-copy').hidden = !admin;
+    document.querySelector('#workspace-title').textContent = admin ? 'Organization admin dashboard' : 'Your SecureFlow workspace';
+    document.querySelector('#workspace-subtitle').textContent = admin ? 'Review requests, manage members, and protect organization access.' : 'Submit and track requests with a clear approval trail.';
+    document.querySelector('#process-title').textContent = admin ? 'Admin responsibilities' : 'How it works';
+    document.querySelector('#process-copy').textContent = admin ? 'Review every decision with requester context, admit verified employees, and keep a complete audit trail for your organization.' : 'Submit a request with a clear business reason. Your organization approver reviews it, records a decision, and SecureFlow notifies you of the outcome.';
     if (admin) {
       document.querySelector('#admin-nav').click();
       void loadAdminPanel();
