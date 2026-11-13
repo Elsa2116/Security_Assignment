@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { authenticator } from 'otplib';
+import QRCode from 'qrcode';
 import { config } from '../config.js';
 import { query, withTransaction } from '../db/pool.js';
 
@@ -22,7 +23,9 @@ function decrypt(value: string) {
 export async function beginMfaEnrollment(userId: string) {
   const secret = authenticator.generateSecret();
   await query(`INSERT INTO app.mfa_credentials(user_id,encrypted_secret,enabled_at) VALUES ($1,$2,NULL) ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=EXCLUDED.encrypted_secret,enabled_at=NULL`, [userId, encrypt(secret)]);
-  return { issuer: 'SecureFlow', account: userId, otpauthUrl: authenticator.keyuri(userId, 'SecureFlow', secret) };
+  const otpauthUrl = authenticator.keyuri(userId, 'SecureFlow', secret);
+  // Generate the QR locally from the server-created URI; the encrypted seed is never returned separately.
+  return { issuer: 'SecureFlow', account: userId, otpauthUrl, qrCodeDataUrl: await QRCode.toDataURL(otpauthUrl, { margin: 2, width: 280 }) };
 }
 
 // Confirm the first code, enable MFA, and return recovery codes exactly once.
