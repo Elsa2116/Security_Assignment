@@ -28,11 +28,14 @@ document.querySelectorAll('.toggle-password').forEach(button => {
   });
 });
 
-// Show non-sensitive feedback from the API without exposing response internals.
+let statusTimer;
+// Show short-lived non-sensitive feedback from the API without exposing response internals.
 const showStatus = (message, error = false) => {
+  clearTimeout(statusTimer);
   statusBox.textContent = message;
   statusBox.style.display = 'block';
   statusBox.style.color = error ? '#b42318' : '#b7791f';
+  statusTimer = setTimeout(() => { statusBox.textContent = ''; statusBox.style.display = 'none'; }, error ? 7000 : 5000);
 };
 
 // Switch between the focused registration and sign-in states without duplicating pages.
