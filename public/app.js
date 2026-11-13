@@ -31,6 +31,7 @@ document.querySelectorAll('.toggle-password').forEach(button => {
 // Show non-sensitive feedback from the API without exposing response internals.
 const showStatus = (message, error = false) => {
   statusBox.textContent = message;
+  statusBox.style.display = 'block';
   statusBox.style.color = error ? '#b42318' : '#b7791f';
 };
 
@@ -39,6 +40,7 @@ function showAuthForm(form) {
   document.querySelector('#register').classList.toggle('hidden', form !== 'register');
   document.querySelector('#login').classList.toggle('hidden', form !== 'login');
   statusBox.textContent = '';
+  statusBox.style.display = 'none';
 }
 
 // Switch workspace panels locally; authorization remains enforced by the API for every data operation.
@@ -228,7 +230,6 @@ async function loadDashboard() {
       const target = ['overview', 'requests', 'new-request', 'settings', 'help'].includes(requestedView || '') ? requestedView : 'overview';
       document.querySelector(`[data-view="${target}"]`).click();
     }
-    showStatus('Signed in.');
   } catch {
     // Anonymous visitors stay on the registration/sign-in view.
   }
