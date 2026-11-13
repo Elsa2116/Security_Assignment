@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureFlow</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background:#0f172a; color:#e2e8f0; }
+    body { margin:0; min-height:100vh; background:linear-gradient(135deg,#0f172a,#172554); }
+    main { width:min(100% - 32px, 960px); margin:0 auto; padding:42px 0; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:28px; }
+    h1 { margin:0; color:#93c5fd; } h2 { margin-top:0; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; }
+    .card { background:#111827dd; border:1px solid #334155; border-radius:16px; padding:22px; box-shadow:0 16px 40px #02061755; }
+    label { display:block; margin:12px 0 6px; color:#cbd5e1; font-size:.9rem; }
+    input, select, textarea { box-sizing:border-box; width:100%; padding:11px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#f8fafc; }
+    textarea { min-height:80px; resize:vertical; } button { margin-top:14px; padding:11px 15px; border:0; border-radius:8px; cursor:pointer; background:#2563eb; color:white; font-weight:700; } button.secondary { background:#475569; }
+    #status { min-height:24px; margin:14px 0; color:#fbbf24; white-space:pre-wrap; } #dashboard { display:none; }
+    pre { overflow:auto; background:#020617; padding:12px; border-radius:8px; color:#bfdbfe; } .muted { color:#94a3b8; }
+  </style>
+</head>
+<body>
+<main>
+  <header><div><h1>SecureFlow</h1><div class="muted">Secure request and approval management</div></div><button id="logout" class="secondary" hidden>Sign out</button></header>
+  <div id="status"></div>
+  <section id="auth" class="grid">
+    <form id="register" class="card">
+      <h2>Register employee</h2><p class="muted">Your account remains pending admission until verification and organization approval.</p>
+      <label for="reg-name">Name</label><input id="reg-name" required autocomplete="name">
+      <label for="reg-email">Email</label><input id="reg-email" type="email" required autocomplete="email">
+      <label for="reg-password">Password</label><input id="reg-password" type="password" minlength="12" required autocomplete="new-password">
+      <button>Register</button>
+    </form>
+    <form id="login" class="card">
+      <h2>Sign in</h2><p class="muted">Verification emails are available in Mailpit at port 8025 during local development.</p>
+      <label for="login-email">Email</label><input id="login-email" type="email" required autocomplete="email">
+      <label for="login-password">Password</label><input id="login-password" type="password" required autocomplete="current-password">
+      <button>Sign in</button>
+    </form>
+  </section>
+  <section id="dashboard" class="grid">
+    <div class="card"><h2>Dashboard</h2><pre id="profile"></pre></div>
+    <form id="request-form" class="card"><h2>New request</h2>
+      <label for="request-type">Type</label><select id="request-type"><option>LEAVE</option><option>EQUIPMENT</option><option>SERVICE</option></select>
+      <label for="request-title">Title</label><input id="request-title" required maxlength="160">
+      <label for="request-description">Description</label><textarea id="request-description"></textarea>
+      <label for="request-payload">Payload JSON</label><textarea id="request-payload">{"details":"Local demonstration"}</textarea>
+      <button>Create request</button>
+    </form>
+    <div class="card"><h2>My requests</h2><pre id="requests">Loading…</pre></div>
+  </section>
+</main>
+<script>
+// Keep browser behavior intentionally small: all identity and data decisions remain server-side.
+const statusBox = document.querySelector('#status');
+// Show non-sensitive feedback from the API without exposing response internals.
+const showStatus = (message, error=false) => { statusBox.textContent = message; statusBox.style.color = error ? '#fca5a5' : '#fbbf24'; };
+// Send same-origin JSON requests while preserving Better Auth cookies.
+async function api(path, options={}) {
+  const response = await fetch(path, { credentials:'include', ...options, headers:{ 'Content-Type':'application/json', ...(options.headers||{}) } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
+  return body.data ?? body;
+}
+// Supply a per-request CSRF proof for state-changing application calls.
+function csrfHeaders() { return { 'x-csrf-token': crypto.randomUUID() }; }
+// Load the real session/profile/request data and switch from public forms to the dashboard.
+async function loadDashboard() {
+  try { const profile = await api('/api/v1/me'); const requests = await api('/api/v1/requests'); document.querySelector('#profile').textContent = JSON.stringify(profile,null,2); document.querySelector('#requests').textContent = JSON.stringify(requests,null,2); document.querySelector('#auth').style.display='none'; document.querySelector('#dashboard').style.display='grid'; document.querySelector('#logout').hidden=false; showStatus('Signed in.'); }
+  catch { /* Anonymous visitors stay on the registration/sign-in view. */ }
+}
+// Register through Better Auth; verification is delivered to the local Mailpit inbox.
+document.querySelector('#register').addEventListener('submit', async event => { event.preventDefault(); try { const data = await api('/api/auth/sign-up/email',{method:'POST',body:JSON.stringify({name:document.querySelector('#reg-name').value,email:document.querySelector('#reg-email').value,password:document.querySelector('#reg-password').value})}); showStatus(`Registered ${data.user.email}. Verify the email in Mailpit, then sign in.`); } catch(error) { showStatus(error.message,true); } });
+// Sign in through Better Auth and then render the authenticated application state.
+document.querySelector('#login').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/auth/sign-in/email',{method:'POST',body:JSON.stringify({email:document.querySelector('#login-email').value,password:document.querySelector('#login-password').value})}); await loadDashboard(); } catch(error) { showStatus(error.message,true); } });
+// Sign out through Better Auth so the server revokes the session and clears cookies.
+document.querySelector('#logout').addEventListener('click', async () => { try { await api('/api/auth/sign-out',{method:'POST',headers:csrfHeaders(),body:'{}'}); location.reload(); } catch(error) { showStatus(error.message,true); } });
+// Create a real persisted request with a unique idempotency key.
+document.querySelector('#request-form').addEventListener('submit', async event => { event.preventDefault(); try { const result = await api('/api/v1/requests',{method:'POST',headers:{...csrfHeaders(),'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({type:document.querySelector('#request-type').value,title:document.querySelector('#request-title').value,description:document.querySelector('#request-description').value,payload:JSON.parse(document.querySelector('#request-payload').value)})}); showStatus(`Request ${result.id} created.`); await loadDashboard(); } catch(error) { showStatus(error.message,true); } });
+// Attempt session restoration when the page opens; anonymous users remain on the auth forms.
+loadDashboard();
+</script>
+</body>
+</html>
