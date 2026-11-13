@@ -10,30 +10,30 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:auth:migrate": "npx auth@latest migrate",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
-    ,"test:e2e": "vitest run tests/e2e"
-    ,"test:security": "vitest run tests/security"
-    ,"typecheck": "tsc -p tsconfig.json --noEmit"
-    ,"lint": "tsc -p tsconfig.json --noEmit"
-    ,"db:seed": "tsx scripts/seed-demo.ts"
-    ,"db:reset-password": "tsx scripts/reset-password.ts"
-    ,"db:promote-admin": "tsx scripts/promote-admin.ts"
-    ,"audit:verify": "tsx scripts/verify-audit-chain.ts"
-    ,"defense:check": "tsx scripts/defense-check.ts"
-    ,"backup:full": "tsx scripts/backup-full.ts"
-    ,"backup:verify": "tsx scripts/verify-backup.ts"
-    ,"restore:test": "tsx scripts/restore-test.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "vitest run tests/e2e",
+    "test:security": "vitest run tests/security",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "db:seed": "tsx scripts/seed-demo.ts",
+    "db:reset-password": "tsx scripts/reset-password.ts",
+    "db:promote-admin": "tsx scripts/promote-admin.ts",
+    "audit:verify": "tsx scripts/verify-audit-chain.ts",
+    "defense:check": "tsx scripts/defense-check.ts",
+    "backup:full": "tsx scripts/backup-full.ts",
+    "backup:verify": "tsx scripts/verify-backup.ts",
+    "restore:test": "tsx scripts/restore-test.ts"
   },
   "dependencies": {
-    "better-auth": "latest",
-    "bcryptjs": "latest",
     "@aws-sdk/client-s3": "latest",
+    "bcryptjs": "latest",
+    "better-auth": "latest",
     "dotenv": "latest",
     "express": "latest",
     "helmet": "latest",
-    "jsonwebtoken": "latest",
-    "jose": "latest",
     "ioredis": "latest",
+    "jose": "latest",
+    "jsonwebtoken": "latest",
     "nodemailer": "latest",
     "otplib": "^12.0.1",
     "pg": "latest",
@@ -46,7 +46,7 @@
     "@types/nodemailer": "latest",
     "@types/pg": "latest",
     "tsx": "latest",
-    "typescript": "latest",
+    "typescript": "^5.9.3",
     "vitest": "latest"
   }
 }
