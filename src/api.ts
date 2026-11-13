@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { query, withTransaction } from './db/pool.js';
 import { appendAudit, verifyAuditChain } from './security/audit-chain.js';
 import { AuthenticatedRequest, failure, requireAuth, requirePermission, requestContext, result } from './security/http.js';
+import { beginMfaEnrollment, confirmMfa, verifyMfa } from './security/mfa.js';
+import { revokeSession } from './security/tokens.js';
 
 const uuid = z.string().uuid();
 const requestSchema = z.object({ type: z.enum(['LEAVE','EQUIPMENT','SERVICE']), title: z.string().trim().min(1).max(160), description: z.string().max(4000).default(''), payload: z.record(z.string(), z.unknown()) });
@@ -67,6 +69,35 @@ api.get('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => 
   if (!r.rowCount) return failure(res, req.requestId, 'NOT_FOUND', 'Request not found', 404);
   const history = await query('SELECT actor_id AS "actorId",from_status AS "fromStatus",to_status AS "toStatus",changed_fields AS "changedFields",created_at AS "createdAt" FROM app.request_history WHERE request_id=$1 ORDER BY created_at', [req.params.id]);
   return result(res, req.requestId, { ...r.rows[0], history: history.rows });
+});
+
+api.patch('/requests/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const parsed = z.object({ expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(160).optional(), description: z.string().max(4000).optional(), payload: z.record(z.string(), z.unknown()).optional() }).safeParse(req.body);
+  if (!parsed.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid request update', 422);
+  const updated = await withTransaction(async (client) => {
+    const current = await client.query<{ status: string; version: number; title: string; description: string; payload_json: unknown }>('SELECT status,version,title,description,payload_json FROM app.requests WHERE id=$1 AND owner_id=$2 FOR UPDATE', [req.params.id, req.user!.id]);
+    if (!current.rowCount) throw new Error('NOT_FOUND');
+    if (current.rows[0].status !== 'PENDING' || current.rows[0].version !== parsed.data.expectedVersion) throw new Error('CONFLICT');
+    const next = await client.query('UPDATE app.requests SET title=COALESCE($1,title),description=COALESCE($2,description),payload_json=COALESCE($3,payload_json),version=version+1,updated_at=now() WHERE id=$4 RETURNING id,status,version', [parsed.data.title ?? null, parsed.data.description ?? null, parsed.data.payload ? JSON.stringify(parsed.data.payload) : null, req.params.id]);
+    await client.query('INSERT INTO app.request_history(request_id,actor_id,from_status,to_status,changed_fields) VALUES ($1,$2,$3,$3,$4)', [req.params.id, req.user!.id, 'PENDING', JSON.stringify(parsed.data)]);
+    await appendAudit(client, { actorId: req.user!.id, action: 'request.update', resourceType: 'request', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId) });
+    return next.rows[0];
+  }).catch((error) => { throw error; });
+  return result(res, req.requestId, updated);
+});
+
+api.post('/requests/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const cancelled = await withTransaction(async (client) => {
+      const row = await client.query<{ version: number }>(`SELECT version FROM app.requests WHERE id=$1 AND owner_id=$2 AND status='PENDING' FOR UPDATE`, [req.params.id, req.user!.id]);
+      if (!row.rowCount) throw new Error('NOT_FOUND_OR_NOT_PENDING');
+      const next = await client.query(`UPDATE app.requests SET status='CANCELLED',version=version+1,updated_at=now() WHERE id=$1 AND version=$2 RETURNING id,status,version`, [req.params.id, row.rows[0].version]);
+      await client.query('INSERT INTO app.request_history(request_id,actor_id,from_status,to_status,changed_fields) VALUES ($1,$2,$3,$4,$5)', [req.params.id, req.user!.id, 'PENDING', 'CANCELLED', JSON.stringify({ reason: req.body?.reason ?? '' })]);
+      await appendAudit(client, { actorId: req.user!.id, action: 'request.cancel', resourceType: 'request', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId) });
+      return next.rows[0];
+    });
+    return result(res, req.requestId, cancelled);
+  } catch { return failure(res, req.requestId, 'NOT_FOUND_OR_NOT_PENDING', 'Request cannot be cancelled', 409); }
 });
 
 api.get('/approvals', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -158,6 +189,26 @@ async function decideRoleChange(req: AuthenticatedRequest, res: any, decision: '
 api.post('/admin/role-change-requests/:id/approve', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'APPROVED'));
 api.post('/admin/role-change-requests/:id/reject', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'REJECTED'));
 
+api.post('/auth/mfa/enroll', requireAuth, async (req: AuthenticatedRequest, res) => result(res, req.requestId, await beginMfaEnrollment(req.user!.id)));
+api.post('/auth/mfa/confirm', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const code = z.string().regex(/^\d{6}$/).safeParse(req.body?.code);
+  if (!code.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'A six digit TOTP code is required', 422);
+  const confirmed = await confirmMfa(req.user!.id, code.data);
+  if (!confirmed) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
+  return result(res, req.requestId, confirmed);
+});
+api.post('/auth/mfa/challenge', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const code = z.string().min(6).max(20).safeParse(req.body?.code);
+  if (!code.success || !(await verifyMfa(req.user!.id, code.data))) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
+  return result(res, req.requestId, { mfaVerified: true });
+});
+api.get('/auth/sessions', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const sessions = await query('SELECT id,expires_at AS "expiresAt",ip_address AS "ipAddress",user_agent AS "userAgent",created_at AS "createdAt",updated_at AS "updatedAt" FROM auth.session WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC', [req.user!.id]);
+  return result(res, req.requestId, sessions.rows);
+});
+api.delete('/auth/sessions/:id', requireAuth, async (req: AuthenticatedRequest, res) => { await revokeSession(req.user!.id, String(req.params.id)); return res.status(204).send(); });
+api.post('/auth/sessions/revoke-all', requireAuth, async (req: AuthenticatedRequest, res) => { await query('UPDATE auth.session SET revoked_at=now() WHERE user_id=$1', [req.user!.id]); return result(res, req.requestId, { revoked: true }); });
+
 api.get('/admin/audit', requireAuth, async (req: AuthenticatedRequest, res) => {
   if (!(await requirePermission(req.user!.id, 'audit:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit access required', 403);
   const r = await query('SELECT sequence,actor_user_id AS "actorId",action,resource_type AS "resourceType",resource_id AS "resourceId",outcome,created_at AS "occurredAt",correlation_id AS "correlationId",entry_hash AS "entryHash" FROM app.audit_events ORDER BY sequence DESC LIMIT 100');
@@ -172,6 +223,16 @@ api.get('/admin/alerts', requireAuth, async (req: AuthenticatedRequest, res) => 
   const r = await query('SELECT id,alert_type AS rule,severity,details,acknowledged_at AS "acknowledgedAt",created_at AS "createdAt" FROM app.security_alerts ORDER BY created_at DESC LIMIT 100');
   return result(res, req.requestId, r.rows);
 });
+api.patch('/admin/alerts/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'alerts:manage'))) return failure(res, req.requestId, 'FORBIDDEN', 'Alert management required', 403);
+  const action = z.enum(['ACKNOWLEDGE','ESCALATE']).safeParse(req.body?.action);
+  if (!action.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Unknown alert action', 422);
+  const next = await withTransaction(async (client) => { const r = await client.query('UPDATE app.security_alerts SET acknowledged_at=CASE WHEN $1=\'ACKNOWLEDGE\' THEN now() ELSE acknowledged_at END WHERE id=$2 RETURNING id,alert_type AS rule,severity,acknowledged_at AS "acknowledgedAt"', [action.data, req.params.id]); await appendAudit(client, { actorId: req.user!.id, action: `alert.${action.data.toLowerCase()}`, resourceType: 'security_alert', resourceId: String(req.params.id), outcome: r.rowCount ? 'success' : 'failure', correlationId: String(req.requestId) }); return r.rows[0]; });
+  if (!next) return failure(res, req.requestId, 'NOT_FOUND', 'Alert not found', 404); return result(res, req.requestId, next);
+});
+api.get('/admin/incidents', requireAuth, async (req: AuthenticatedRequest, res) => { if (!(await requirePermission(req.user!.id, 'incidents:manage'))) return failure(res, req.requestId, 'FORBIDDEN', 'Incident access required', 403); const r = await query('SELECT id,alert_id AS "alertId",owner_id AS "ownerId",severity,status,summary,postmortem,created_at AS "createdAt",updated_at AS "updatedAt" FROM app.security_incidents ORDER BY created_at DESC'); return result(res, req.requestId, r.rows); });
+api.post('/admin/incidents', requireAuth, async (req: AuthenticatedRequest, res) => { if (!(await requirePermission(req.user!.id, 'incidents:manage'))) return failure(res, req.requestId, 'FORBIDDEN', 'Incident management required', 403); const body = z.object({ severity: z.string().min(1), summary: z.string().trim().min(1).max(2000), alertId: uuid.optional() }).safeParse(req.body); if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid incident', 422); const incident = await withTransaction(async (client) => { const r = await client.query('INSERT INTO app.security_incidents(alert_id,owner_id,severity,summary) VALUES ($1,$2,$3,$4) RETURNING id,status', [body.data.alertId ?? null, req.user!.id, body.data.severity, body.data.summary]); await client.query('INSERT INTO app.incident_events(incident_id,actor_id,action,note) VALUES ($1,$2,\'CREATED\',$3)', [r.rows[0].id, req.user!.id, body.data.summary]); await appendAudit(client, { actorId: req.user!.id, action: 'incident.create', resourceType: 'security_incident', resourceId: r.rows[0].id, outcome: 'success', correlationId: String(req.requestId) }); return r.rows[0]; }); return result(res, req.requestId, incident, 201); });
+api.patch('/admin/incidents/:id', requireAuth, async (req: AuthenticatedRequest, res) => { if (!(await requirePermission(req.user!.id, 'incidents:manage'))) return failure(res, req.requestId, 'FORBIDDEN', 'Incident management required', 403); const body = z.object({ status: z.enum(['TRIAGED','CONTAINED','ERADICATED','RECOVERED','CLOSED']), note: z.string().max(2000).default('') }).safeParse(req.body); if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Invalid incident transition', 422); const incident = await withTransaction(async (client) => { const r = await client.query('UPDATE app.security_incidents SET status=$1,postmortem=CASE WHEN $1=\'CLOSED\' THEN $2 ELSE postmortem END,updated_at=now() WHERE id=$3 RETURNING id,status', [body.data.status, body.data.note, req.params.id]); if (!r.rowCount) throw new Error('NOT_FOUND'); await client.query('INSERT INTO app.incident_events(incident_id,actor_id,action,note) VALUES ($1,$2,$3,$4)', [req.params.id, req.user!.id, body.data.status, body.data.note]); await appendAudit(client, { actorId: req.user!.id, action: 'incident.transition', resourceType: 'security_incident', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId), metadata: { status: body.data.status } }); return r.rows[0]; }); return result(res, req.requestId, incident); });
 api.get('/notifications', requireAuth, async (req: AuthenticatedRequest, res) => {
   const r = await query('SELECT id,type,title,body,status,read_at AS "readAt",created_at AS "createdAt" FROM app.notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100', [req.user!.id]);
   return result(res, req.requestId, r.rows);
