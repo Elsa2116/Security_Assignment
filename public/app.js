@@ -11,6 +11,7 @@ const roleLabels = {
   AUDITOR: 'Auditor'
 };
 const formatRoles = roles => roles?.length ? roles.map(role => roleLabels[role] || role).join(', ') : 'No role assigned';
+const viewLabels = { overview: 'Overview', requests: 'My requests', 'new-request': 'New request', admin: 'Admin console', settings: 'Settings', help: 'Help center' };
 
 // Toggle password visibility locally; the value is never sent anywhere except the auth request.
 document.querySelectorAll('.toggle-password').forEach(button => {
@@ -43,6 +44,7 @@ function showAuthForm(form) {
 // Switch workspace panels locally; authorization remains enforced by the API for every data operation.
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
   const view = item.dataset.view;
+  document.querySelector('#current-view-label').textContent = viewLabels[view] || 'Overview';
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav === item));
   const employeeView = ['overview', 'requests', 'new-request'].includes(view);
   document.querySelector('.dashboard-wrap').style.display = employeeView ? 'block' : 'none';
@@ -63,6 +65,12 @@ document.querySelector('#overview-new-request').addEventListener('click', () => 
 document.querySelector('#overview-my-requests').addEventListener('click', () => document.querySelector('[data-view="requests"]').click());
 document.querySelector('#overview-admin-console').addEventListener('click', () => document.querySelector('[data-view="admin"]').click());
 document.querySelector('#overview-admin-settings').addEventListener('click', () => document.querySelector('[data-view="settings"]').click());
+
+// Search the currently loaded real request/member rows without inventing client-side data.
+document.querySelector('#global-search').addEventListener('input', event => {
+  const term = event.target.value.trim().toLowerCase();
+  document.querySelectorAll('.admin-item, .request-item').forEach(item => { item.hidden = Boolean(term) && !item.textContent.toLowerCase().includes(term); });
+});
 
 // Verification redirects back here with a safe, non-sensitive status marker.
 if (new URLSearchParams(window.location.search).get('verified') === '1') {
@@ -162,6 +170,9 @@ async function loadDashboard() {
   try {
     const profile = await api('/api/v1/me');
     const requests = await api('/api/v1/requests');
+    document.querySelector('#current-user-name').textContent = profile.name || profile.email || 'SecureFlow user';
+    document.querySelector('#current-user-role').textContent = formatRoles(profile.roles);
+    document.querySelector('#user-avatar').textContent = (profile.name || profile.email || 'S').slice(0, 1).toUpperCase();
     // Render server data as text nodes so user-controlled values cannot become HTML.
     const profileBox = document.querySelector('#profile');
     profileBox.replaceChildren();
