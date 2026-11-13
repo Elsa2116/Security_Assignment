@@ -60,4 +60,11 @@ app.all('/api/auth/{*splat}', async (req, res) => {
   res.send(Buffer.from(await response.arrayBuffer()));
 });
 
+// Convert parser and unexpected middleware failures into generic JSON; stack traces stay in server logs only.
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('request_failed', { path: req.path, method: req.method, error: error instanceof Error ? error.message : 'unknown' });
+  if (res.headersSent) return;
+  res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'The request could not be processed' } });
+});
+
 app.listen(config.PORT, () => console.log(`SecureFlow listening on ${config.PORT}`));

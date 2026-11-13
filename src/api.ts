@@ -266,6 +266,11 @@ api.post('/admin/role-change-requests/:id/approve', requireAuth, (req,res) => de
 api.post('/admin/role-change-requests/:id/reject', requireAuth, (req,res) => decideRoleChange(req as AuthenticatedRequest,res,'REJECTED'));
 
 // MFA routes keep the TOTP seed server-side and expose recovery codes only at confirmation time.
+api.get('/auth/mfa/status', requireAuth, async (req: AuthenticatedRequest, res) => {
+  // Only return enrollment metadata; encrypted TOTP seeds and recovery-code hashes never leave the server.
+  const r = await query(`SELECT (enabled_at IS NOT NULL) AS enabled, (SELECT count(*)::int FROM app.mfa_recovery_codes WHERE user_id=$1 AND used_at IS NULL) AS "recoveryCodesRemaining" FROM app.mfa_credentials WHERE user_id=$1`, [req.user!.id]);
+  return result(res, req.requestId, r.rows[0] ?? { enabled: false, recoveryCodesRemaining: 0 });
+});
 api.post('/auth/mfa/enroll', requireAuth, async (req: AuthenticatedRequest, res) => result(res, req.requestId, await beginMfaEnrollment(req.user!.id)));
 api.post('/auth/mfa/confirm', requireAuth, async (req: AuthenticatedRequest, res) => {
   const code = z.string().regex(/^\d{6}$/).safeParse(req.body?.code);

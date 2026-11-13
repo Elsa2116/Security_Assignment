@@ -21,10 +21,10 @@ Status is evidence-based. `PASS` means verified in this repository/runtime; `BLO
 
 ## BLOCKED or incomplete
 
-- Full Next.js App Router UI and Playwright browser evidence: BLOCKED/incomplete; current executable surface is the Express API.
+- Full Next.js App Router UI and Playwright browser evidence: BLOCKED/incomplete; current UI is a professional Express-served static frontend, not Next.js App Router.
 - Production SMTP/CAPTCHA provider, S3 object-lock/WAL archival, TLS termination, external log sink, and mTLS: BLOCKED until credentials/infrastructure are configured.
 - Full MFA challenge integrated into Better Auth sign-in and production-grade distributed lockout: implementation incomplete; local enrollment/challenge and bcrypt/password reset hooks are present.
-- Full governance routes (incidents, access reviews, policies, risks, change management, awareness) and their UI: implementation incomplete.
+- Governance API routes exist for audit, alerts, incidents, risks, policies, and security changes; dedicated admin UI screens, access reviews, and awareness workflows remain incomplete.
 - Restore-to-isolated-database drill: BLOCKED until an isolated target and `pg_dump`/`pg_restore` execution environment are provided.
 - ZAP/CodeQL/Semgrep/Playwright performance and staging rollback evidence: not run; no PASS claim.
 
@@ -37,3 +37,10 @@ Invoke-WebRequest http://localhost:3000/health
 Invoke-WebRequest http://localhost:3000/api/v1/health/ready
 docker compose exec postgres psql -U secureflow -d secureflow -c "select version from app.schema_migrations order by version;"
 ```
+
+## Newly completed local workflows
+
+- Employee/admin request lifecycle is available against the real PostgreSQL database: verified registration, admission, request submission, approval/rejection, notifications, and audit writes.
+- Password recovery now has request and reset screens in the browser and delegates password changes to Better Auth.
+- Settings now loads MFA status from PostgreSQL, supports TOTP enrollment/confirmation, displays recovery codes once, and lists/revokes active sessions.
+- The authenticated status banner is intentionally hidden after sign-in; operational success and error messages remain visible when an action needs feedback.

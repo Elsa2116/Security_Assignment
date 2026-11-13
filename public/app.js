@@ -39,6 +39,8 @@ const showStatus = (message, error = false) => {
 function showAuthForm(form) {
   document.querySelector('#register').classList.toggle('hidden', form !== 'register');
   document.querySelector('#login').classList.toggle('hidden', form !== 'login');
+  document.querySelector('#forgot-password').classList.toggle('hidden', form !== 'forgot-password');
+  document.querySelector('#reset-password').classList.toggle('hidden', form !== 'reset-password');
   statusBox.textContent = '';
   statusBox.style.display = 'none';
 }
@@ -58,6 +60,7 @@ document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('cl
   document.querySelector('#settings-panel').classList.toggle('active', view === 'settings');
   document.querySelector('#help-panel').classList.toggle('active', view === 'help');
   if (view === 'admin') void loadAdminPanel();
+  if (view === 'settings') void loadSecuritySettings();
   if (view === 'new-request') document.querySelector('#request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (view === 'requests') document.querySelector('#requests').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }));
@@ -75,12 +78,17 @@ document.querySelector('#global-search').addEventListener('input', event => {
   document.querySelectorAll('.admin-item, .request-item').forEach(item => { item.hidden = Boolean(term) && !item.textContent.toLowerCase().includes(term); });
 });
 
-// Verification redirects back here with a safe, non-sensitive status marker.
-if (new URLSearchParams(window.location.search).get('verified') === '1') {
+// Verification and password-reset redirects return here with short-lived, non-sensitive navigation markers.
+const initialQuery = new URLSearchParams(window.location.search);
+let pendingResetToken = initialQuery.get('token');
+if (initialQuery.get('reset') === '1' && pendingResetToken) {
+  showAuthForm('reset-password');
+  window.history.replaceState({}, document.title, window.location.pathname);
+} else if (initialQuery.get('verified') === '1') {
   showAuthForm('login');
   showStatus('Your email is verified. You can sign in now.');
   window.history.replaceState({}, document.title, window.location.pathname);
-} else if (new URLSearchParams(window.location.search).get('signin') === '1') {
+} else if (initialQuery.get('signin') === '1') {
   // Sign-out always returns to the sign-in form instead of the registration form.
   showAuthForm('login');
   window.history.replaceState({}, document.title, window.location.pathname);
@@ -93,6 +101,18 @@ document.querySelector('#show-login').addEventListener('click', event => {
 document.querySelector('#show-register').addEventListener('click', event => {
   event.preventDefault();
   showAuthForm('register');
+});
+document.querySelector('#show-forgot-password').addEventListener('click', event => {
+  event.preventDefault();
+  showAuthForm('forgot-password');
+});
+document.querySelector('#back-to-login').addEventListener('click', event => {
+  event.preventDefault();
+  showAuthForm('login');
+});
+document.querySelector('#reset-back-to-login').addEventListener('click', event => {
+  event.preventDefault();
+  showAuthForm('login');
 });
 
 // Send same-origin JSON requests while preserving Better Auth cookies.
@@ -110,6 +130,28 @@ async function api(path, options = {}) {
 // Supply a per-request CSRF proof for state-changing application calls.
 function csrfHeaders() {
   return { 'x-csrf-token': crypto.randomUUID() };
+}
+
+// Render live MFA and session controls from PostgreSQL-backed API responses; no security state is fabricated in the browser.
+async function loadSecuritySettings() {
+  const panel = document.querySelector('#settings-panel');
+  const grid = panel.querySelector('.settings-grid');
+  if (!grid || grid.dataset.loaded === 'true') return;
+  grid.dataset.loaded = 'true';
+  // Replace the initial presentation-only security rows with live controls below.
+  [...grid.querySelectorAll('.settings-row')].filter(row => /Multi-factor authentication|Session security/.test(row.textContent || '')).forEach(row => row.remove());
+  const mfaRow = document.createElement('div'); mfaRow.className = 'settings-row';
+  const mfaCopy = document.createElement('div'); const mfaTitle = document.createElement('strong'); mfaTitle.textContent = 'Multi-factor authentication'; const mfaHelp = document.createElement('span'); mfaHelp.textContent = 'Protect sign-in with a TOTP authenticator and recovery codes.'; mfaCopy.append(mfaTitle, mfaHelp);
+  const mfaActions = document.createElement('div'); mfaActions.className = 'settings-actions'; const mfaStatus = document.createElement('span'); mfaStatus.className = 'status-chip'; mfaStatus.textContent = 'Loading'; const mfaButton = document.createElement('button'); mfaButton.className = 'secondary'; mfaButton.type = 'button'; mfaButton.textContent = 'Set up MFA'; mfaActions.append(mfaStatus, mfaButton); mfaRow.append(mfaCopy, mfaActions);
+  const sessionRow = document.createElement('div'); sessionRow.className = 'settings-row'; const sessionCopy = document.createElement('div'); const sessionTitle = document.createElement('strong'); sessionTitle.textContent = 'Active sessions'; const sessionHelp = document.createElement('span'); sessionHelp.textContent = 'Revoke sessions you no longer recognize.'; sessionCopy.append(sessionTitle, sessionHelp); const revokeAll = document.createElement('button'); revokeAll.className = 'secondary'; revokeAll.type = 'button'; revokeAll.textContent = 'Revoke all'; sessionRow.append(sessionCopy, revokeAll);
+  const sessions = document.createElement('div'); sessions.className = 'session-list'; sessions.textContent = 'Loading sessions…'; grid.append(mfaRow, sessionRow, sessions);
+  try {
+    const mfa = await api('/api/v1/auth/mfa/status'); mfaStatus.textContent = mfa.enabled ? `Enabled · ${mfa.recoveryCodesRemaining} codes` : 'Not enabled'; mfaButton.textContent = mfa.enabled ? 'Regenerate setup' : 'Set up MFA';
+    mfaButton.addEventListener('click', async () => { try { const enrollment = await api('/api/v1/auth/mfa/enroll', { method: 'POST', headers: csrfHeaders(), body: '{}' }); const code = window.prompt(`Scan this authenticator URI, then enter the six-digit code:\n${enrollment.otpauthUrl}`); if (!code) return; const confirmed = await api('/api/v1/auth/mfa/confirm', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ code }) }); window.alert(`Save these recovery codes securely:\n${confirmed.recoveryCodes.join('\n')}`); showStatus('MFA enabled successfully.'); await loadSecuritySettings(); } catch (error) { showStatus(error.message, true); } });
+    const rows = await api('/api/v1/auth/sessions'); sessions.replaceChildren();
+    if (!rows.length) { sessions.textContent = 'No active sessions found.'; } else rows.forEach(session => { const item = document.createElement('div'); item.className = 'session-item'; const label = document.createElement('span'); label.textContent = `${session.userAgent || 'Browser session'} · ${session.ipAddress || 'Unknown IP'}`; const revoke = document.createElement('button'); revoke.className = 'secondary'; revoke.type = 'button'; revoke.textContent = 'Revoke'; revoke.addEventListener('click', async () => { await api(`/api/v1/auth/sessions/${session.id}`, { method: 'DELETE', headers: csrfHeaders() }); item.remove(); showStatus('Session revoked.'); }); item.append(label, revoke); sessions.append(item); });
+    revokeAll.addEventListener('click', async () => { if (!window.confirm('Revoke all active sessions? You will need to sign in again.')) return; await api('/api/v1/auth/sessions/revoke-all', { method: 'POST', headers: csrfHeaders(), body: '{}' }); showStatus('All sessions revoked.'); window.location.assign('/?signin=1'); });
+  } catch (error) { sessions.textContent = 'Security settings could not be loaded.'; showStatus(error.message, true); }
 }
 
 // Build the admin approval queue with real server data and safe text nodes.
@@ -259,6 +301,30 @@ document.querySelector('#register').addEventListener('submit', async event => {
   } catch (error) {
     showStatus(error.message, true);
   }
+});
+
+// Start Better Auth's official password-reset flow; the worker delivers the reset email through the configured outbox.
+document.querySelector('#forgot-password').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await api('/api/auth/request-password-reset', { method: 'POST', body: JSON.stringify({ email: document.querySelector('#forgot-email').value, redirectTo: '/?reset=1' }) });
+    showStatus('If the account exists, a password reset link was sent. Check Mailpit during local development.');
+  } catch (error) {
+    showStatus(error.message, true);
+  }
+});
+
+// Complete the reset token flow through Better Auth; the server revokes existing sessions after success.
+document.querySelector('#reset-password').addEventListener('submit', async event => {
+  event.preventDefault();
+  const password = document.querySelector('#reset-password-value').value;
+  if (password !== document.querySelector('#reset-password-confirm').value) { showStatus('Passwords do not match. Please check both fields.', true); return; }
+  try {
+    await api('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: pendingResetToken, newPassword: password }) });
+    pendingResetToken = null;
+    showAuthForm('login');
+    showStatus('Password updated. You can sign in now.');
+  } catch (error) { showStatus(error.message, true); }
 });
 
 // Sign in through Better Auth and then render the authenticated application state.

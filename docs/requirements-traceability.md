@@ -10,9 +10,9 @@
 | Atomic request approval | `src/api.ts` `decideRequest`, `withTransaction` | Integration test/demo users required | PARTIAL |
 | Role-change separation of duties | `src/api.ts` `decideRoleChange` | Integration test/demo users required | PARTIAL |
 | Refresh rotation and replay alerts | `src/security/tokens.ts` | Security test required | PARTIAL |
-| MFA/TOTP and recovery codes | `src/security/mfa.ts` | Better Auth challenge integration required | PARTIAL |
+| MFA/TOTP and recovery codes | `src/security/mfa.ts`, `src/api.ts`, `public/app.js` | Enrollment, confirmation, recovery-code display, and session controls are available; sign-in challenge enforcement remains | PARTIAL |
 | Append-only hash-chain audit | `src/security/audit-chain.ts`, SQL trigger | `scripts/verify-audit-chain.ts` | PARTIAL |
 | Encrypted full backup | `src/services/backup.ts` | `npm run backup:full`, external `pg_dump` required | BLOCKED |
 | Supporting services | `docker-compose.yml` | `docker compose ps` | PASS |
-| Full UI route inventory | Contract section 8 | No Next.js UI yet | BLOCKED |
+| Full UI route inventory | Contract section 8 | Employee/admin static UI routes are implemented; Next.js App Router and dedicated governance screens remain | PARTIAL |
 | Security scans and DAST | `.github/workflows/` pending | Not run | BLOCKED |
