@@ -294,7 +294,7 @@ async function loadDashboard() {
     }
   } catch (error) {
     if (error.code === 'MFA_REQUIRED') { showAuthForm('mfa-challenge'); showStatus('Enter your authenticator code to continue.'); }
-    // Anonymous visitors stay on the registration/sign-in view.
+    else { showAuthForm('login'); showStatus(error.message || 'Your session could not be opened. Please sign in again.', true); }
   }
 }
 
