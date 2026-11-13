@@ -65,6 +65,7 @@ document.querySelector('#overview-new-request').addEventListener('click', () => 
 document.querySelector('#overview-my-requests').addEventListener('click', () => document.querySelector('[data-view="requests"]').click());
 document.querySelector('#overview-admin-console').addEventListener('click', () => document.querySelector('[data-view="admin"]').click());
 document.querySelector('#overview-admin-settings').addEventListener('click', () => document.querySelector('[data-view="settings"]').click());
+document.querySelector('#header-new-request').addEventListener('click', () => document.querySelector('[data-view="new-request"]').click());
 
 // Search the currently loaded real request/member rows without inventing client-side data.
 document.querySelector('#global-search').addEventListener('input', event => {
@@ -190,6 +191,7 @@ async function loadDashboard() {
     // Keep the summary cards derived from the same server response as the request list.
     document.querySelector('#stat-total').textContent = String(requestRows.length);
     document.querySelector('#stat-pending').textContent = String(requestRows.filter(request => ['PENDING', 'SUBMITTED', 'IN_REVIEW'].includes(request.status)).length);
+    document.querySelector('#stat-approved').textContent = String(requestRows.filter(request => request.status === 'APPROVED').length);
     document.querySelector('#stat-access').textContent = profile.status === 'ACTIVE' ? 'Active' : 'Pending';
     if (!requestRows.length) {
       const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No requests yet. Create your first request to get started.'; requestBox.append(empty);
@@ -209,10 +211,11 @@ async function loadDashboard() {
     document.querySelector('#new-request-nav').hidden = admin;
     document.querySelector('#my-requests-nav').hidden = admin;
     document.querySelector('#request-form').hidden = admin;
+    document.querySelector('#header-new-request').hidden = admin;
     document.querySelector('#employee-overview-copy').hidden = admin;
     document.querySelector('#admin-overview-copy').hidden = !admin;
-    document.querySelector('#workspace-title').textContent = admin ? 'Organization admin dashboard' : 'Your SecureFlow workspace';
-    document.querySelector('#workspace-subtitle').textContent = admin ? 'Review requests, manage members, and protect organization access.' : 'Submit and track requests with a clear approval trail.';
+    document.querySelector('#workspace-title').textContent = admin ? 'Organization admin dashboard' : `Welcome back, ${profile.name || 'SecureFlow user'}`;
+    document.querySelector('#workspace-subtitle').textContent = admin ? 'Review requests, manage members, and protect organization access.' : 'Track your requests and approval decisions in one secure workspace.';
     document.querySelector('#process-title').textContent = admin ? 'Admin responsibilities' : 'How it works';
     document.querySelector('#process-copy').textContent = admin ? 'Review every decision with requester context, admit verified employees, and keep a complete audit trail for your organization.' : 'Submit a request with a clear business reason. Your organization approver reviews it, records a decision, and SecureFlow notifies you of the outcome.';
     const requestedView = new URLSearchParams(window.location.search).get('view');
