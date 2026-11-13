@@ -180,6 +180,8 @@ async function loadAdminPanel() {
     // Admin overview metrics come from the organization-wide SQL aggregate, not employee-owned requests.
     document.querySelector('#stat-total').textContent = String(overview.totalRequests ?? 0);
     document.querySelector('#stat-pending').textContent = String(overview.pendingRequests ?? 0);
+    // Admin metrics must use the organization-wide aggregate, not the admin's own request list.
+    document.querySelector('#stat-approved').textContent = String(overview.approvedRequests ?? 0);
     document.querySelector('#stat-access').textContent = 'Admin';
     document.querySelector('#admin-pending-count').textContent = String(overview.pendingRequests ?? 0);
     document.querySelector('#admin-approved-count').textContent = String(overview.approvedRequests ?? 0);
