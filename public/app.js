@@ -1,6 +1,17 @@
 // Keep browser behavior intentionally small: all identity and data decisions remain server-side.
 const statusBox = document.querySelector('#status');
 
+// Convert internal RBAC codes into clear product language for end users.
+const roleLabels = {
+  ADMIN: 'Organization administrator',
+  USER: 'Employee',
+  MANAGER: 'Department manager',
+  SECURITY_ADMIN: 'Security administrator',
+  SECURITY_REVIEWER: 'Security reviewer',
+  AUDITOR: 'Auditor'
+};
+const formatRoles = roles => roles?.length ? roles.map(role => roleLabels[role] || role).join(', ') : 'No role assigned';
+
 // Toggle password visibility locally; the value is never sent anywhere except the auth request.
 document.querySelectorAll('.toggle-password').forEach(button => {
   const eye = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>';
@@ -154,7 +165,7 @@ async function loadDashboard() {
     // Render server data as text nodes so user-controlled values cannot become HTML.
     const profileBox = document.querySelector('#profile');
     profileBox.replaceChildren();
-    [['Name', profile.name], ['Email', profile.email], ['Status', profile.status], ['Organization', profile.organizationName || 'Not assigned'], ['Department', profile.departmentName || 'Not assigned'], ['Roles', profile.roles?.length ? profile.roles.join(', ') : 'No roles assigned']].forEach(([label, value]) => {
+    [['Name', profile.name], ['Email', profile.email], ['Status', profile.status], ['Organization', profile.organizationName || 'Not assigned'], ['Department', profile.departmentName || 'Not assigned'], ['Access level', formatRoles(profile.roles)]].forEach(([label, value]) => {
       const row = document.createElement('div');
       row.className = 'profile-row';
       const name = document.createElement('span'); name.className = 'profile-label'; name.textContent = label;
