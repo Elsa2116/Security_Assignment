@@ -22,8 +22,8 @@ api.get('/health/ready', async (req: AuthenticatedRequest, res) => {
 });
 
 api.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const r = await query(`SELECT up.user_id AS "userId", up.name, up.email_normalized AS email, up.status, up.organization_id AS "organizationId", up.department_id AS "departmentId",
-    COALESCE(json_agg(DISTINCT ro.code) FILTER (WHERE ro.code IS NOT NULL), '[]') roles FROM app.user_profiles up LEFT JOIN app.user_roles ur ON ur.user_id=up.user_id AND ur.revoked_at IS NULL LEFT JOIN app.roles ro ON ro.id=ur.role_id WHERE up.user_id=$1 GROUP BY up.user_id`, [req.user!.id]);
+  const r = await query(`SELECT up.user_id AS "userId", up.name, up.email_normalized AS email, up.status, up.organization_id AS "organizationId", o.name AS "organizationName", up.department_id AS "departmentId", d.name AS "departmentName",
+    COALESCE(json_agg(DISTINCT ro.code) FILTER (WHERE ro.code IS NOT NULL), '[]') roles FROM app.user_profiles up LEFT JOIN app.organizations o ON o.id=up.organization_id LEFT JOIN app.departments d ON d.id=up.department_id LEFT JOIN app.user_roles ur ON ur.user_id=up.user_id AND ur.revoked_at IS NULL LEFT JOIN app.roles ro ON ro.id=ur.role_id WHERE up.user_id=$1 GROUP BY up.user_id,o.name,d.name`, [req.user!.id]);
   return result(res, req.requestId, r.rows[0] ?? { userId: req.user!.id });
 });
 

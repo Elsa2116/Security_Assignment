@@ -135,7 +135,7 @@ async function loadDashboard() {
     // Render server data as text nodes so user-controlled values cannot become HTML.
     const profileBox = document.querySelector('#profile');
     profileBox.replaceChildren();
-    [['Name', profile.name], ['Email', profile.email], ['Status', profile.status], ['Organization', profile.organizationId || 'Not assigned'], ['Roles', profile.roles?.length ? profile.roles.join(', ') : 'No roles assigned']].forEach(([label, value]) => {
+    [['Name', profile.name], ['Email', profile.email], ['Status', profile.status], ['Organization', profile.organizationName || 'Not assigned'], ['Department', profile.departmentName || 'Not assigned'], ['Roles', profile.roles?.length ? profile.roles.join(', ') : 'No roles assigned']].forEach(([label, value]) => {
       const row = document.createElement('div');
       row.className = 'profile-row';
       const name = document.createElement('span'); name.className = 'profile-label'; name.textContent = label;
