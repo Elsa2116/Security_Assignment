@@ -27,13 +27,15 @@ app.use(helmet({
   hsts: config.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], objectSrc: ["'none'"],
+      defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'], styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'], connectSrc: ["'self'", 'https://www.google.com'], frameSrc: ['https://www.google.com/recaptcha/'], objectSrc: ["'none'"],
       baseUri: ["'self'"], frameAncestors: ["'none'"]
     }
   }
 }));
 app.use(express.json({ limit: '1mb' }));
+// Expose only the public reCAPTCHA site key; the secret key remains server-side in Render environment variables.
+app.get('/api/public-config', (_req, res) => res.json({ captchaSiteKey: process.env.CAPTCHA_SITE_KEY ?? '' }));
 // Serve the browser UI from the same origin and prevent stale authentication JavaScript from being cached.
 app.use(express.static('public', { setHeaders: (res, filePath) => { if (filePath.endsWith('.html') || filePath.endsWith('.js')) res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); } }));
 // Enforce same-origin or explicit CSRF proof on state-changing application routes.

@@ -50,6 +50,28 @@ const showStatus = (message, error = false) => {
   statusTimer = setTimeout(() => { statusBox.textContent = ''; statusBox.style.display = 'none'; }, error ? 7000 : 5000);
 };
 
+// Request a real reCAPTCHA v3 token in production; the development token is retained only for local development.
+let captchaClientPromise;
+async function getRegistrationCaptchaToken() {
+  const publicConfig = await fetch('/api/public-config', { credentials: 'same-origin' }).then(response => response.ok ? response.json() : Promise.reject(new Error('CAPTCHA configuration unavailable')));
+  const siteKey = publicConfig.captchaSiteKey;
+  if (!siteKey) return 'local-development-captcha';
+  if (!captchaClientPromise) {
+    captchaClientPromise = new Promise((resolve, reject) => {
+      if (window.grecaptcha) return resolve(window.grecaptcha);
+      const script = document.createElement('script');
+      script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`;
+      script.async = true;
+      script.onload = () => resolve(window.grecaptcha);
+      script.onerror = () => reject(new Error('CAPTCHA could not load'));
+      document.head.appendChild(script);
+    });
+  }
+  const grecaptcha = await captchaClientPromise;
+  await new Promise(resolve => grecaptcha.ready(resolve));
+  return grecaptcha.execute(siteKey, { action: 'register' });
+}
+
 // Switch between the focused registration and sign-in states without duplicating pages.
 function showAuthForm(form) {
   document.querySelector('#register').classList.toggle('hidden', form !== 'register');
@@ -350,6 +372,7 @@ document.querySelector('#register').addEventListener('submit', async event => {
       showStatus('Passwords do not match. Please check both fields.', true);
       return;
     }
+    const captchaToken = await getRegistrationCaptchaToken();
     const data = await api('/api/auth/sign-up/email', {
       method: 'POST',
       body: JSON.stringify({
@@ -357,7 +380,7 @@ document.querySelector('#register').addEventListener('submit', async event => {
         email: document.querySelector('#reg-email').value,
         password,
         confirmPassword: confirmation,
-        captchaToken: 'local-development-captcha'
+        captchaToken
       })
     });
     verificationEmail = data.user.email;
