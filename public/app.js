@@ -103,12 +103,20 @@ if (initialQuery.get('reset') === '1' && pendingResetToken) {
 // Load the organization security center from restricted PostgreSQL-backed admin endpoints.
 async function loadAdminSecurity() {
   try {
-    const [integrity, audit, alerts, incidents] = await Promise.all([api('/api/v1/admin/audit/integrity'), api('/api/v1/admin/audit'), api('/api/v1/admin/alerts'), api('/api/v1/admin/incidents')]);
+    const [integrity, audit, alerts, incidents, risks, policies, changes, reviews] = await Promise.all([api('/api/v1/admin/audit/integrity'), api('/api/v1/admin/audit'), api('/api/v1/admin/alerts'), api('/api/v1/admin/incidents'), api('/api/v1/admin/risks'), api('/api/v1/admin/policies'), api('/api/v1/admin/security-changes'), api('/api/v1/admin/access-reviews')]);
     document.querySelector('#audit-integrity').textContent = integrity.valid ? `Valid chain · ${integrity.checked} entries checked` : 'Integrity failure detected';
     const render = (selector, rows, empty, mapper) => { const box = document.querySelector(selector); box.replaceChildren(); if (!rows.length) { box.textContent = empty; return; } rows.forEach(row => { const item = document.createElement('div'); item.className = 'security-item'; mapper(row, item); box.append(item); }); };
     render('#audit-list', audit, 'No audit events recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = row.action; const detail = document.createElement('span'); detail.textContent = `${row.outcome} · ${new Date(row.occurredAt).toLocaleString()}`; item.append(title, detail); });
     render('#alert-list', alerts, 'No security alerts recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = `${row.severity} · ${row.rule}`; const detail = document.createElement('span'); detail.textContent = row.acknowledgedAt ? `Acknowledged ${new Date(row.acknowledgedAt).toLocaleString()}` : 'Unacknowledged'; item.append(title, detail); if (!row.acknowledgedAt) { const button = document.createElement('button'); button.className = 'secondary'; button.textContent = 'Acknowledge'; button.addEventListener('click', async () => { await api(`/api/v1/admin/alerts/${row.id}`, { method: 'PATCH', headers: csrfHeaders(), body: JSON.stringify({ action: 'ACKNOWLEDGE' }) }); await loadAdminSecurity(); }); item.append(button); } });
     render('#incident-list', incidents, 'No incidents recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = `${row.severity} · ${row.status}`; const detail = document.createElement('span'); detail.textContent = row.summary; item.append(title, detail); });
+    let governance = document.querySelector('#governance-list');
+    if (!governance) { governance = document.createElement('div'); governance.id = 'governance-list'; governance.className = 'governance-grid'; document.querySelector('#admin-security-panel').append(governance); }
+    governance.replaceChildren();
+    const governanceCard = (title, rows, empty, formatter) => { const card = document.createElement('div'); card.className = 'card governance-card'; const heading = document.createElement('h4'); heading.textContent = title; card.append(heading); if (!rows.length) { const text = document.createElement('p'); text.className = 'muted'; text.textContent = empty; card.append(text); } else rows.slice(0, 8).forEach(row => { const item = document.createElement('div'); item.className = 'security-item'; item.textContent = formatter(row); card.append(item); }); governance.append(card); };
+    governanceCard('Risk register', risks, 'No risks recorded.', row => `${row.score} · ${row.title} · ${row.status}`);
+    governanceCard('Published policies', policies, 'No policies published.', row => `${row.type} v${row.version}`);
+    governanceCard('Security changes', changes, 'No security changes recorded.', row => `${row.type} · ${row.status} · ${row.reason}`);
+    governanceCard('Access reviews', reviews, 'No access reviews created.', row => `${row.periodStart} to ${row.periodEnd} · ${row.pendingCount} pending`);
   } catch (error) { showStatus(error.message, true); }
 }
 
