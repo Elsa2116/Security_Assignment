@@ -92,6 +92,10 @@ async function loadDashboard() {
     const requestBox = document.querySelector('#requests');
     requestBox.replaceChildren();
     const requestRows = Array.isArray(requests) ? requests : (requests.items || []);
+    // Keep the summary cards derived from the same server response as the request list.
+    document.querySelector('#stat-total').textContent = String(requestRows.length);
+    document.querySelector('#stat-pending').textContent = String(requestRows.filter(request => ['PENDING', 'SUBMITTED', 'IN_REVIEW'].includes(request.status)).length);
+    document.querySelector('#stat-access').textContent = profile.status === 'ACTIVE' ? 'Active' : 'Pending';
     if (!requestRows.length) {
       const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No requests yet. Create your first request to get started.'; requestBox.append(empty);
     } else requestRows.forEach(request => {
@@ -174,7 +178,7 @@ document.querySelector('#request-form').addEventListener('submit', async event =
         type: document.querySelector('#request-type').value,
         title: document.querySelector('#request-title').value,
         description: document.querySelector('#request-description').value,
-        payload: JSON.parse(document.querySelector('#request-payload').value)
+        payload: { details: document.querySelector('#request-details').value }
       })
     });
     showStatus(`Request ${result.id} created.`);
