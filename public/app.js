@@ -33,9 +33,11 @@ function showAuthForm(form) {
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
   const view = item.dataset.view;
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav === item));
-  document.querySelector('#dashboard').style.display = view === 'settings' || view === 'help' ? 'none' : 'grid';
+  document.querySelector('#dashboard').style.display = view === 'settings' || view === 'help' || view === 'admin' ? 'none' : 'grid';
+  document.querySelector('#admin-panel').classList.toggle('active', view === 'admin');
   document.querySelector('#settings-panel').classList.toggle('active', view === 'settings');
   document.querySelector('#help-panel').classList.toggle('active', view === 'help');
+  if (view === 'admin') void loadAdminPanel();
   if (view === 'new-request') document.querySelector('#request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (view === 'requests') document.querySelector('#requests').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }));
@@ -73,6 +75,58 @@ function csrfHeaders() {
   return { 'x-csrf-token': crypto.randomUUID() };
 }
 
+// Build the admin approval queue with real server data and safe text nodes.
+async function loadAdminPanel() {
+  try {
+    const [overview, members, directory] = await Promise.all([api('/api/v1/admin/overview'), api('/api/v1/admin/members'), api('/api/v1/admin/directory')]);
+    document.querySelector('#admin-pending-count').textContent = String(overview.pendingRequests ?? 0);
+    document.querySelector('#admin-approved-count').textContent = String(overview.approvedRequests ?? 0);
+    const pendingMembers = members.filter(member => member.status === 'PENDING_ADMISSION');
+    document.querySelector('#admin-member-count').textContent = String(pendingMembers.length);
+    const queue = document.querySelector('#admin-queue'); queue.replaceChildren();
+    if (!overview.pending?.length) { const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No requests are waiting for approval.'; queue.append(empty); }
+    overview.pending?.forEach(request => {
+      const item = document.createElement('article'); item.className = 'admin-item';
+      const header = document.createElement('div'); header.className = 'admin-item-header';
+      const title = document.createElement('strong'); title.textContent = request.title;
+      const status = document.createElement('span'); status.className = 'status-chip'; status.textContent = 'PENDING'; header.append(title, status);
+      const description = document.createElement('p'); description.textContent = request.description || 'No description provided.';
+      const meta = document.createElement('div'); meta.className = 'admin-meta'; meta.textContent = `${request.requesterName} · ${request.requesterEmail} · ${request.departmentName || 'Unassigned department'}`;
+      const actions = document.createElement('div'); actions.className = 'admin-actions';
+      const approve = document.createElement('button'); approve.textContent = 'Approve'; approve.addEventListener('click', () => void decideAdminRequest(request, 'approve'));
+      const reject = document.createElement('button'); reject.className = 'danger'; reject.textContent = 'Reject'; reject.addEventListener('click', () => void decideAdminRequest(request, 'reject'));
+      actions.append(approve, reject); item.append(header, description, meta, actions); queue.append(item);
+    });
+    const membersBox = document.querySelector('#admin-members'); membersBox.replaceChildren();
+    if (!pendingMembers.length) { const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No verified users are waiting for admission.'; membersBox.append(empty); }
+    pendingMembers.forEach(member => {
+      const item = document.createElement('article'); item.className = 'admin-item';
+      const header = document.createElement('div'); header.className = 'admin-item-header';
+      const title = document.createElement('strong'); title.textContent = member.name;
+      const status = document.createElement('span'); status.className = 'status-chip'; status.textContent = member.emailVerified ? 'VERIFIED' : 'VERIFY EMAIL'; header.append(title, status);
+      const email = document.createElement('p'); email.textContent = member.email;
+      const organization = document.createElement('select'); directory.organizations.forEach(org => { const option = document.createElement('option'); option.value = org.id; option.textContent = org.name; organization.append(option); });
+      const department = document.createElement('select');
+      const refreshDepartments = () => { department.replaceChildren(); directory.departments.filter(dep => dep.organizationId === organization.value).forEach(dep => { const option = document.createElement('option'); option.value = dep.id; option.textContent = dep.name; department.append(option); }); };
+      organization.addEventListener('change', refreshDepartments); refreshDepartments();
+      const actions = document.createElement('div'); actions.className = 'admin-actions';
+      const admit = document.createElement('button'); admit.textContent = 'Admit member'; admit.disabled = !member.emailVerified; admit.addEventListener('click', async () => { try { await api(`/api/v1/admin/members/${member.userId}/admit`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ organizationId: organization.value, departmentId: department.value }) }); showStatus(`${member.name} was admitted to the organization.`); await loadAdminPanel(); } catch (error) { showStatus(error.message, true); } });
+      actions.append(organization, department, admit); item.append(header, email, actions); membersBox.append(item);
+    });
+  } catch (error) { showStatus(error.message, true); }
+}
+
+// Approval decisions always include the server's optimistic version and an idempotency key.
+async function decideAdminRequest(request, decision) {
+  const reason = decision === 'reject' ? window.prompt('Reason for rejection:') : '';
+  if (decision === 'reject' && !reason) return;
+  try {
+    await api(`/api/v1/requests/${request.id}/${decision}`, { method: 'POST', headers: { ...csrfHeaders(), 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ expectedVersion: request.version, comment: reason || '' , reason: reason || undefined }) });
+    showStatus(`Request ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+    await loadAdminPanel();
+  } catch (error) { showStatus(error.message, true); }
+}
+
 // Load real session/profile/request data and switch to the authenticated dashboard.
 async function loadDashboard() {
   try {
@@ -108,6 +162,9 @@ async function loadDashboard() {
     document.querySelector('#app-shell').style.display = 'grid';
     document.querySelector('#dashboard').style.display = 'grid';
     document.querySelector('#logout').hidden = false;
+    const admin = profile.roles?.some(role => ['ADMIN', 'SECURITY_ADMIN'].includes(role));
+    document.querySelector('#admin-nav').hidden = !admin;
+    if (admin) void loadAdminPanel();
     showStatus('Signed in.');
   } catch {
     // Anonymous visitors stay on the registration/sign-in view.

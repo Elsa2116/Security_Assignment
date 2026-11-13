@@ -17,6 +17,7 @@
     ,"lint": "tsc -p tsconfig.json --noEmit"
     ,"db:seed": "tsx scripts/seed-demo.ts"
     ,"db:reset-password": "tsx scripts/reset-password.ts"
+    ,"db:promote-admin": "tsx scripts/promote-admin.ts"
     ,"audit:verify": "tsx scripts/verify-audit-chain.ts"
     ,"defense:check": "tsx scripts/defense-check.ts"
     ,"backup:full": "tsx scripts/backup-full.ts"

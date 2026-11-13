@@ -112,6 +112,68 @@ api.get('/approvals', requireAuth, async (req: AuthenticatedRequest, res) => {
   return result(res, req.requestId, r.rows);
 });
 
+// Admin overview data is organization-scoped and only exposes counts plus actionable queue items.
+api.get('/admin/overview', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'requests:read_all'))) return failure(res, req.requestId, 'FORBIDDEN', 'Admin access required', 403);
+  const profile = await query<{ organization_id: string | null }>('SELECT organization_id FROM app.user_profiles WHERE user_id=$1', [req.user!.id]);
+  if (!profile.rows[0]?.organization_id) return failure(res, req.requestId, 'NO_ORGANIZATION', 'Admin is not assigned to an organization', 409);
+  const organizationId = profile.rows[0].organization_id;
+  const [counts, queue] = await Promise.all([
+    query(`SELECT count(*) FILTER (WHERE status='PENDING')::int AS "pendingRequests", count(*) FILTER (WHERE status='APPROVED')::int AS "approvedRequests", count(*) FILTER (WHERE status='REJECTED')::int AS "rejectedRequests", count(*)::int AS "totalRequests" FROM app.requests WHERE organization_id=$1`, [organizationId]),
+    query(`SELECT r.id,r.type,r.title,r.description,r.status,r.version,r.created_at AS "createdAt",up.name AS "requesterName",up.email_normalized AS "requesterEmail",d.name AS "departmentName" FROM app.requests r JOIN app.user_profiles up ON up.user_id=r.owner_id LEFT JOIN app.departments d ON d.id=r.department_id WHERE r.organization_id=$1 AND r.status='PENDING' ORDER BY r.created_at ASC LIMIT 25`, [organizationId])
+  ]);
+  return result(res, req.requestId, { ...counts.rows[0], pending: queue.rows });
+});
+
+// Admins use this queue to manage verified users who are waiting for organization admission.
+api.get('/admin/members', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'members:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Member administration required', 403);
+  const rows = await query(`SELECT up.user_id AS "userId",up.name,up.email_normalized AS email,up.status,up.organization_id AS "organizationId",up.department_id AS "departmentId",up.created_at AS "createdAt",au.email_verified AS "emailVerified" FROM app.user_profiles up JOIN auth."user" au ON au.id=up.user_id ORDER BY CASE WHEN up.status='PENDING_ADMISSION' THEN 0 ELSE 1 END,up.created_at DESC LIMIT 100`);
+  return result(res, req.requestId, rows.rows);
+});
+
+// Admission options are read-only metadata used by the admin assignment form.
+api.get('/admin/directory', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'members:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Directory access required', 403);
+  const organizations = await query('SELECT id,name,slug FROM app.organizations WHERE status=\'ACTIVE\' ORDER BY name');
+  const departments = await query('SELECT id,organization_id AS "organizationId",name,manager_user_id AS "managerUserId" FROM app.departments ORDER BY name');
+  return result(res, req.requestId, { organizations: organizations.rows, departments: departments.rows });
+});
+
+// Admit a verified user and assign organization/department in one auditable transaction.
+api.post('/admin/members/:userId/admit', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'members:admit'))) return failure(res, req.requestId, 'FORBIDDEN', 'Member admission permission required', 403);
+  const body = z.object({ organizationId: uuid, departmentId: uuid }).safeParse(req.body);
+  if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Organization and department are required', 422);
+  try {
+    const admitted = await withTransaction(async (client) => {
+      const verified = await client.query<{ email_verified: boolean }>('SELECT email_verified FROM auth."user" WHERE id=$1', [req.params.userId]);
+      if (verified.rows[0]?.email_verified !== true) throw new Error('EMAIL_NOT_VERIFIED');
+      const department = await client.query('SELECT id FROM app.departments WHERE id=$1 AND organization_id=$2', [body.data.departmentId, body.data.organizationId]);
+      if (!department.rowCount) throw new Error('DEPARTMENT_INVALID');
+      const profile = await client.query(`UPDATE app.user_profiles SET organization_id=$1,department_id=$2,status='ACTIVE',email_verified_at=now(),updated_at=now() WHERE user_id=$3 AND status='PENDING_ADMISSION' RETURNING user_id AS "userId",name,email_normalized AS email,status,organization_id AS "organizationId",department_id AS "departmentId"`, [body.data.organizationId, body.data.departmentId, req.params.userId]);
+      if (!profile.rowCount) throw new Error('MEMBER_NOT_PENDING');
+      const role = await client.query<{ id: string }>('SELECT id FROM app.roles WHERE code=\'USER\' LIMIT 1');
+      if (role.rowCount) await client.query('INSERT INTO app.user_roles(user_id,role_id,assigned_by) VALUES ($1,$2,$3) ON CONFLICT (user_id,role_id) DO UPDATE SET revoked_at=NULL', [req.params.userId, role.rows[0].id, req.user!.id]);
+      await client.query('INSERT INTO app.notifications(user_id,type,title,body) VALUES ($1,\'MEMBER_ADMITTED\',\'Organization access approved\',\'Your SecureFlow account is now active.\')', [req.params.userId]);
+      await appendAudit(client, { actorId: req.user!.id, action: 'member.admit', resourceType: 'user', resourceId: String(req.params.userId), outcome: 'success', correlationId: req.requestId, metadata: { organizationId: body.data.organizationId, departmentId: body.data.departmentId } });
+      return profile.rows[0];
+    });
+    return result(res, req.requestId, admitted);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    return failure(res, req.requestId, code === 'EMAIL_NOT_VERIFIED' ? 'EMAIL_NOT_VERIFIED' : 'ADMISSION_FAILED', code === 'EMAIL_NOT_VERIFIED' ? 'The user must verify their email first' : 'The user could not be admitted', 409);
+  }
+});
+
+// Admin approval queue includes requester and department context for review screens.
+api.get('/admin/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
+  if (!(await requirePermission(req.user!.id, 'requests:read_all'))) return failure(res, req.requestId, 'FORBIDDEN', 'Admin request access required', 403);
+  const profile = await query<{ organization_id: string | null }>('SELECT organization_id FROM app.user_profiles WHERE user_id=$1', [req.user!.id]);
+  const rows = await query(`SELECT r.id,r.type,r.title,r.description,r.payload_json AS payload,r.status,r.version,r.owner_id AS "ownerId",up.name AS "requesterName",up.email_normalized AS "requesterEmail",d.name AS "departmentName",r.created_at AS "createdAt" FROM app.requests r JOIN app.user_profiles up ON up.user_id=r.owner_id LEFT JOIN app.departments d ON d.id=r.department_id WHERE r.organization_id=$1 ORDER BY r.created_at DESC LIMIT 100`, [profile.rows[0]?.organization_id ?? null]);
+  return result(res, req.requestId, rows.rows);
+});
+
 // Shared approval implementation prevents self-approval and makes the final decision single-writer.
 async function decideRequest(req: AuthenticatedRequest, res: any, decision: 'APPROVED'|'REJECTED') {
   const schema = z.object({ expectedVersion: z.number().int().positive(), comment: z.string().max(2000).default(''), reason: z.string().trim().min(1).max(2000).optional() });
@@ -124,7 +186,8 @@ async function decideRequest(req: AuthenticatedRequest, res: any, decision: 'APP
       const found = await client.query<{ id: string; owner_id: string; assigned_manager_id: string; status: string; version: number }>('SELECT id,owner_id,assigned_manager_id,status,version FROM app.requests WHERE id=$1 FOR UPDATE', [req.params.id]);
       if (found.rowCount !== 1) throw new Error('NOT_FOUND');
       const row = found.rows[0];
-      if (row.assigned_manager_id !== req.user!.id || row.owner_id === req.user!.id) throw new Error('FORBIDDEN');
+      const globalApproval = await requirePermission(req.user!.id, 'requests:approve_global');
+      if ((row.assigned_manager_id !== req.user!.id && !globalApproval) || row.owner_id === req.user!.id) throw new Error('FORBIDDEN');
       if (row.status !== 'PENDING' || row.version !== parsed.data.expectedVersion) throw new Error('CONFLICT');
       const next = await client.query<{ id: string; status: string; version: number }>('UPDATE app.requests SET status=$1,version=version+1,updated_at=now() WHERE id=$2 AND status=\'PENDING\' AND version=$3 RETURNING id,status,version', [decision, req.params.id, parsed.data.expectedVersion]);
       if (!next.rowCount) throw new Error('CONFLICT');

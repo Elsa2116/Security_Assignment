@@ -38,6 +38,24 @@
     .settings-row span { color:#64748b; font-size:.78rem; }
     .switch { position:relative; width:42px; height:24px; margin:0; padding:0; border-radius:999px; background:#2563eb; }
     .switch::after { content:""; position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; background:#fff; }
+    .admin-toolbar { display:flex; justify-content:space-between; align-items:end; gap:20px; margin-bottom:18px; }
+    .admin-toolbar h2 { margin:3px 0 5px; font-size:2rem; }
+    .admin-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:20px; }
+    .admin-list { display:grid; gap:10px; }
+    .admin-item { padding:15px; border:1px solid #e2e8f0; border-radius:13px; background:#fff; }
+    .admin-item-header { display:flex; justify-content:space-between; gap:12px; align-items:start; }
+    .admin-item strong { color:#172033; font-size:.88rem; }
+    .admin-item p { margin:7px 0 12px; color:#64748b; font-size:.78rem; line-height:1.5; }
+    .admin-meta { display:flex; flex-wrap:wrap; gap:8px 14px; color:#64748b; font-size:.72rem; }
+    .admin-actions { display:flex; gap:8px; margin-top:12px; }
+    .admin-actions button { margin:0; padding:8px 11px; font-size:.75rem; }
+    .admin-actions .danger { background:#fff1f2; color:#be123c; }
+    .admin-actions .danger:hover { background:#ffe4e6; }
+    .admin-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+    .admin-table th { padding:10px 8px; color:#64748b; border-bottom:1px solid #e2e8f0; font-size:.7rem; text-align:left; text-transform:uppercase; letter-spacing:.05em; }
+    .admin-table td { padding:12px 8px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
+    .admin-table select { min-width:120px; padding:7px 8px; font-size:.76rem; }
+    .admin-table button { margin:0; padding:7px 10px; font-size:.74rem; white-space:nowrap; }
     .dashboard-heading { display:flex; justify-content:space-between; align-items:end; gap:20px; margin:18px 0 22px; }
     .dashboard-heading h2 { margin:3px 0 5px; font-size:2rem; }
     .eyebrow { color:#2563eb; font-size:.74rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
@@ -129,6 +147,7 @@
       <button class="nav-item active" data-view="overview"><span class="nav-icon">⌂</span>Overview</button>
       <button class="nav-item" data-view="requests"><span class="nav-icon">≡</span>My requests</button>
       <button class="nav-item" data-view="new-request"><span class="nav-icon">+</span>New request</button>
+      <button id="admin-nav" class="nav-item" data-view="admin" hidden><span class="nav-icon">◆</span>Admin console</button>
     </nav>
     <div class="sidebar-divider"></div>
     <div class="sidebar-label">Account</div>
@@ -154,6 +173,7 @@
     <div class="card dashboard-card requests-card"><div class="card-heading"><div><h3>My requests</h3><p>Recent submissions and decisions</p></div><div class="card-icon">≡</div></div><div id="requests" class="request-list"><div class="empty-state">Loading your requests…</div></div></div>
   </section>
   </div>
+  <section id="admin-panel" class="page-panel"><div class="admin-toolbar"><div><span class="eyebrow">Administration</span><h2>Organization control center</h2><p class="dashboard-subtitle">Review requests, admit members, and keep access decisions accountable.</p></div><div class="workspace-state"><span class="state-dot"></span>Admin mode</div></div><div class="stats-row"><div class="stat-card"><span>Pending approvals</span><strong id="admin-pending-count">—</strong></div><div class="stat-card"><span>Requests approved</span><strong id="admin-approved-count">—</strong></div><div class="stat-card"><span>Members awaiting admission</span><strong id="admin-member-count">—</strong></div></div><div class="admin-grid"><div class="card dashboard-card"><div class="card-heading"><div><h3>Approval queue</h3><p>Requests waiting for an organization decision</p></div><div class="card-icon">✓</div></div><div id="admin-queue" class="admin-list"><div class="empty-state">Loading approval queue…</div></div></div><div class="card dashboard-card"><div class="card-heading"><div><h3>Admission queue</h3><p>Verified users waiting for organization access</p></div><div class="card-icon">+</div></div><div id="admin-members" class="admin-list"><div class="empty-state">Loading members…</div></div></div></div></section>
   <section id="settings-panel" class="card page-panel"><div class="card-heading"><div><span class="eyebrow">Account</span><h3>Settings</h3><p>Manage your SecureFlow preferences and security controls.</p></div><div class="card-icon">⚙</div></div><div class="settings-grid"><div class="settings-row"><div><strong>Email notifications</strong><span>Receive updates when a request changes status.</span></div><button class="switch" type="button" aria-label="Email notifications enabled"></button></div><div class="settings-row"><div><strong>Multi-factor authentication</strong><span>Additional protection for sensitive actions.</span></div><span class="status-chip">Managed by organization</span></div><div class="settings-row"><div><strong>Session security</strong><span>Sessions are protected with secure, revocable cookies.</span></div><span class="status-chip">Active</span></div></div></section>
   <section id="help-panel" class="card page-panel"><div class="card-heading"><div><span class="eyebrow">Support</span><h3>Help center</h3><p>SecureFlow guidance for requests, approvals, and account security.</p></div><div class="card-icon">?</div></div><div class="settings-grid"><div class="settings-row"><div><strong>Submitting a request</strong><span>Choose a request type, provide a clear title and description, then submit it for review.</span></div></div><div class="settings-row"><div><strong>Need access?</strong><span>Contact your organization administrator to complete admission and assign roles.</span></div></div></div></section>
   <footer class="app-footer"><span>© 2026 SecureFlow · Secure request management</span><div class="footer-links"><span>Protected sessions</span><span>Audit-ready workflows</span></div></footer>
