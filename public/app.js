@@ -33,7 +33,12 @@ function showAuthForm(form) {
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
   const view = item.dataset.view;
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav === item));
-  document.querySelector('#dashboard').style.display = view === 'settings' || view === 'help' || view === 'admin' ? 'none' : 'grid';
+  const employeeView = ['overview', 'requests', 'new-request'].includes(view);
+  document.querySelector('.dashboard-wrap').style.display = employeeView ? 'block' : 'none';
+  document.querySelector('#dashboard').style.display = view === 'requests' ? 'grid' : 'none';
+  document.querySelector('#overview-panel').classList.toggle('active', view === 'overview');
+  document.querySelector('#request-form').hidden = view !== 'new-request';
+  document.querySelector('#requests').closest('.requests-card').hidden = view !== 'requests';
   document.querySelector('#admin-panel').classList.toggle('active', view === 'admin');
   document.querySelector('#settings-panel').classList.toggle('active', view === 'settings');
   document.querySelector('#help-panel').classList.toggle('active', view === 'help');
@@ -41,6 +46,10 @@ document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('cl
   if (view === 'new-request') document.querySelector('#request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (view === 'requests') document.querySelector('#requests').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }));
+
+// Overview quick actions use the same guarded navigation as the sidebar.
+document.querySelector('#overview-new-request').addEventListener('click', () => document.querySelector('[data-view="new-request"]').click());
+document.querySelector('#overview-my-requests').addEventListener('click', () => document.querySelector('[data-view="requests"]').click());
 
 // Verification redirects back here with a safe, non-sensitive status marker.
 if (new URLSearchParams(window.location.search).get('verified') === '1') {
@@ -175,7 +184,7 @@ async function loadDashboard() {
     if (admin) {
       document.querySelector('#admin-nav').click();
       void loadAdminPanel();
-    }
+    } else document.querySelector('[data-view="overview"]').click();
     showStatus('Signed in.');
   } catch {
     // Anonymous visitors stay on the registration/sign-in view.
