@@ -5,6 +5,8 @@ import { auth } from './auth/better-auth.js';
 import { config } from './config.js';
 import { query } from './db/pool.js';
 import { api } from './api.js';
+import { verifyCaptcha } from './security/captcha.js';
+import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
 
 const app = express();
 // Helmet provides baseline browser security headers for every response.
@@ -34,9 +36,22 @@ app.get('/health', async (_req, res) => {
 
 // Delegate all authentication routes to Better Auth; SecureFlow does not duplicate them.
 app.all('/api/auth/{*splat}', async (req, res) => {
+  // Registration requires CAPTCHA in production; the UI uses the explicit local token only in development.
+  if (req.path.endsWith('/sign-up/email')) {
+    const captchaValid = await verifyCaptcha(req.body?.captchaToken || req.header('x-captcha-token'), req.ip ?? undefined);
+    if (!captchaValid) return res.status(422).json({ error: { code: 'CAPTCHA_REQUIRED', message: 'CAPTCHA verification failed' } });
+  }
+  // Protect the login endpoint before Better Auth performs password work.
+  if (req.path.endsWith('/sign-in/email') && isRateLimited(`${String(req.body?.email ?? '').toLowerCase()}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
   const response = await auth.handler(new Request(`${config.BETTER_AUTH_URL}${req.originalUrl}`, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body) }));
+  // Record only outcome metadata; password and token contents never enter logs or alerts.
+  if (req.path.endsWith('/sign-in/email')) {
+    const email = String(req.body?.email ?? '');
+    if (response.status >= 400) await recordLoginFailure(email, req.ip ?? 'unknown');
+    else await recordLoginSuccess(email, req.ip ?? 'unknown');
+  }
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   res.send(Buffer.from(await response.arrayBuffer()));

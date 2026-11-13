@@ -4,6 +4,9 @@
 |---|---|---|---|
 | PostgreSQL + `pg.Pool` + parameterized SQL | `src/db/pool.ts`, `migrations/` | Docker build and live readiness | PASS |
 | Better Auth official PostgreSQL integration | `src/auth/better-auth.ts` | Live signup against PostgreSQL | PASS |
+| Argon2id password hashing | `src/auth/password.ts` | Docker build + live signup smoke test | PASS |
+| Registration CAPTCHA | `src/security/captcha.ts`, `src/server.ts` | Local development bypass; production secret required | PARTIAL |
+| Lockout and login throttling | `src/security/login-protection.ts`, `src/server.ts` | Code path implemented; distributed Redis evidence pending | PARTIAL |
 | Atomic request approval | `src/api.ts` `decideRequest`, `withTransaction` | Integration test/demo users required | PARTIAL |
 | Role-change separation of duties | `src/api.ts` `decideRoleChange` | Integration test/demo users required | PARTIAL |
 | Refresh rotation and replay alerts | `src/security/tokens.ts` | Security test required | PARTIAL |

@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { Pool } from 'pg';
 import { config } from '../config.js';
 import { query } from '../db/pool.js';
+import { hashPassword, verifyPassword } from './password.js';
 
 // Better Auth owns supported authentication operations. Application data access remains raw SQL.
 // The auth pool uses the auth schema so Better Auth's tables cannot collide with app tables.
@@ -17,7 +18,17 @@ export const auth = betterAuth({
   session: { fields: { userId: 'user_id', expiresAt: 'expires_at', ipAddress: 'ip_address', userAgent: 'user_agent', createdAt: 'created_at', updatedAt: 'updated_at' } },
   account: { fields: { userId: 'user_id', accountId: 'account_id', providerId: 'provider_id', accessToken: 'access_token', refreshToken: 'refresh_token', accessTokenExpiresAt: 'access_token_expires_at', refreshTokenExpiresAt: 'refresh_token_expires_at', idToken: 'id_token', createdAt: 'created_at', updatedAt: 'updated_at' } },
   verification: { fields: { expiresAt: 'expires_at', createdAt: 'created_at', updatedAt: 'updated_at' } },
-  emailAndPassword: { enabled: true, requireEmailVerification: true },
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+    minPasswordLength: 12,
+    maxPasswordLength: 128,
+    password: { hash: hashPassword, verify: verifyPassword },
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }: { user: { id: string; email: string }; url: string }) => {
+      await query('INSERT INTO app.outbox_events(event_type,payload) VALUES ($1,$2)', ['PASSWORD_RESET', JSON.stringify({ userId: user.id, email: user.email, url })]);
+    }
+  },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }: { user: { id: string; email: string }; url: string }) => {
       await query('INSERT INTO app.outbox_events(event_type,payload) VALUES ($1,$2)', ['EMAIL_VERIFICATION', JSON.stringify({ userId: user.id, email: user.email, url })]);

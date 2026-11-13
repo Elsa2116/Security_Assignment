@@ -10,6 +10,9 @@ Status is evidence-based. `PASS` means verified in this repository/runtime; `BLO
 | PostgreSQL 16 in Docker | `docker compose ps` | PASS |
 | API health/readiness | `GET /health`, `GET /api/v1/health/ready` | PASS |
 | Better Auth PostgreSQL signup | `POST /api/auth/sign-up/email` | PASS; user and profile persisted |
+| Argon2id password hashing | `src/auth/password.ts`, Better Auth password hooks | PASS; live signup smoke test passed |
+| Local CAPTCHA gate | `src/security/captcha.ts`, browser UI token | PASS locally; production provider configuration required |
+| Login throttle/lockout foundation | `src/security/login-protection.ts` | PASS locally; Redis-backed multi-replica enforcement remains required for production |
 | Verification outbox | PostgreSQL query of `app.outbox_events` | PASS; worker marked delivery |
 | Raw SQL migrations | `migrations/001` through `005` | PASS; no ORM dependency |
 | Transactional approval foundation | `src/api.ts`, `src/db/pool.ts` | PASS by code inspection; live approval evidence pending admitted demo users |
@@ -20,7 +23,7 @@ Status is evidence-based. `PASS` means verified in this repository/runtime; `BLO
 
 - Full Next.js App Router UI and Playwright browser evidence: BLOCKED/incomplete; current executable surface is the Express API.
 - Production SMTP/CAPTCHA provider, S3 object-lock/WAL archival, TLS termination, external log sink, and mTLS: BLOCKED until credentials/infrastructure are configured.
-- Full MFA challenge integrated into Better Auth sign-in, password lockout, password reset, session-cookie rotation, and CSRF token issuance: implementation incomplete.
+- Full MFA challenge integrated into Better Auth sign-in and production-grade distributed lockout: implementation incomplete; local enrollment/challenge and Argon2id/password reset hooks are present.
 - Full governance routes (incidents, access reviews, policies, risks, change management, awareness) and their UI: implementation incomplete.
 - Restore-to-isolated-database drill: BLOCKED until an isolated target and `pg_dump`/`pg_restore` execution environment are provided.
 - ZAP/CodeQL/Semgrep/Playwright performance and staging rollback evidence: not run; no PASS claim.
