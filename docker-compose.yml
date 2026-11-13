@@ -37,7 +37,7 @@ services:
       postgres:
         condition: service_healthy
       # Local development creates only organization/departments metadata; it never creates passwords or tokens.
-      command: ["sh", "-c", "node dist/scripts/migrate.js && node dist/scripts/seed-demo.js && npm run start"]
+    command: ["sh", "-c", "node dist/scripts/migrate.js && node dist/scripts/seed-demo.js && npm run start"]
 
   redis:
     image: redis:7-alpine

@@ -164,7 +164,13 @@ async function loadDashboard() {
     document.querySelector('#logout').hidden = false;
     const admin = profile.roles?.some(role => ['ADMIN', 'SECURITY_ADMIN'].includes(role));
     document.querySelector('#admin-nav').hidden = !admin;
-    if (admin) void loadAdminPanel();
+    // Keep role boundaries visible in the UI: admins manage workflows, employees submit them.
+    document.querySelector('#new-request-nav').hidden = admin;
+    document.querySelector('#request-form').hidden = admin;
+    if (admin) {
+      document.querySelector('#admin-nav').click();
+      void loadAdminPanel();
+    }
     showStatus('Signed in.');
   } catch {
     // Anonymous visitors stay on the registration/sign-in view.
