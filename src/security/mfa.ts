@@ -21,8 +21,10 @@ function decrypt(value: string) {
 
 // Start enrollment by generating and encrypting a new secret without enabling MFA yet.
 export async function beginMfaEnrollment(userId: string) {
-  const secret = authenticator.generateSecret();
-  await query(`INSERT INTO app.mfa_credentials(user_id,encrypted_secret,enabled_at) VALUES ($1,$2,NULL) ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=EXCLUDED.encrypted_secret,enabled_at=NULL`, [userId, encrypt(secret)]);
+  // Reuse an unconfirmed enrollment so refreshing Settings cannot invalidate the QR already scanned by the user.
+  const existing = await query<{ encrypted_secret: string }>('SELECT encrypted_secret FROM app.mfa_credentials WHERE user_id=$1 AND enabled_at IS NULL', [userId]);
+  const secret = existing.rowCount ? decrypt(existing.rows[0].encrypted_secret) : authenticator.generateSecret();
+  if (!existing.rowCount) await query(`INSERT INTO app.mfa_credentials(user_id,encrypted_secret,enabled_at) VALUES ($1,$2,NULL) ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=EXCLUDED.encrypted_secret,enabled_at=NULL`, [userId, encrypt(secret)]);
   const otpauthUrl = authenticator.keyuri(userId, 'SecureFlow', secret);
   // Generate the QR locally from the server-created URI; the encrypted seed is never returned separately.
   return { issuer: 'SecureFlow', account: userId, otpauthUrl, qrCodeDataUrl: await QRCode.toDataURL(otpauthUrl, { margin: 2, width: 280 }) };
