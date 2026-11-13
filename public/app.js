@@ -29,6 +29,17 @@ function showAuthForm(form) {
   statusBox.textContent = '';
 }
 
+// Switch workspace panels locally; authorization remains enforced by the API for every data operation.
+document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
+  const view = item.dataset.view;
+  document.querySelectorAll('.nav-item').forEach(nav => nav.classList.toggle('active', nav === item));
+  document.querySelector('#dashboard').style.display = view === 'settings' || view === 'help' ? 'none' : 'grid';
+  document.querySelector('#settings-panel').classList.toggle('active', view === 'settings');
+  document.querySelector('#help-panel').classList.toggle('active', view === 'help');
+  if (view === 'new-request') document.querySelector('#request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (view === 'requests') document.querySelector('#requests').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}));
+
 // Verification redirects back here with a safe, non-sensitive status marker.
 if (new URLSearchParams(window.location.search).get('verified') === '1') {
   showAuthForm('login');
@@ -90,6 +101,7 @@ async function loadDashboard() {
       item.append(title, details); requestBox.append(item);
     });
     document.querySelector('#auth').style.display = 'none';
+    document.querySelector('#app-shell').style.display = 'grid';
     document.querySelector('#dashboard').style.display = 'grid';
     document.querySelector('#logout').hidden = false;
     showStatus('Signed in.');
