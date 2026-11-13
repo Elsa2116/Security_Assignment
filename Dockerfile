@@ -12,6 +12,8 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+# The backup service invokes pg_dump; keep the PostgreSQL client in the runtime image.
+RUN apk add --no-cache postgresql-client
 COPY --from=build /app/package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
