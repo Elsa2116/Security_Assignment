@@ -29,6 +29,13 @@ function showAuthForm(form) {
   statusBox.textContent = '';
 }
 
+// Verification redirects back here with a safe, non-sensitive status marker.
+if (new URLSearchParams(window.location.search).get('verified') === '1') {
+  showAuthForm('login');
+  showStatus('Your email is verified. You can sign in now.');
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
 document.querySelector('#show-login').addEventListener('click', event => {
   event.preventDefault();
   showAuthForm('login');

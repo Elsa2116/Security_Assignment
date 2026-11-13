@@ -31,7 +31,10 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }: { user: { id: string; email: string }; url: string }) => {
-      await query('INSERT INTO app.outbox_events(event_type,payload) VALUES ($1,$2)', ['EMAIL_VERIFICATION', JSON.stringify({ userId: user.id, email: user.email, url })]);
+      // Return to the UI with an explicit success flag so verification is visible to the user.
+      const verificationUrl = new URL(url, config.BETTER_AUTH_URL);
+      verificationUrl.searchParams.set('callbackURL', '/?verified=1');
+      await query('INSERT INTO app.outbox_events(event_type,payload) VALUES ($1,$2)', ['EMAIL_VERIFICATION', JSON.stringify({ userId: user.id, email: user.email, url: verificationUrl.toString() })]);
     }
   },
   databaseHooks: {
