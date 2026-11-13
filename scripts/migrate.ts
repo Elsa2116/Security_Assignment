@@ -11,6 +11,8 @@ const client = await pool.connect();
 try {
   await client.query('BEGIN');
   await client.query('CREATE SCHEMA IF NOT EXISTS app');
+  // Better Auth stores its PostgreSQL tables in the auth schema; create it before applying auth migrations.
+  await client.query('CREATE SCHEMA IF NOT EXISTS auth');
   await client.query('CREATE TABLE IF NOT EXISTS app.schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
   const applied = new Set((await client.query<{ version: string }>('SELECT version FROM app.schema_migrations')).rows.map((r) => r.version));
   const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort();
