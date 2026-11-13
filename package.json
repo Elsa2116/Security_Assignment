@@ -32,6 +32,7 @@
     "jsonwebtoken": "latest",
     "jose": "latest",
     "ioredis": "latest",
+    "nodemailer": "latest",
     "otplib": "^12.0.1",
     "pg": "latest",
     "zod": "latest"
@@ -40,6 +41,7 @@
     "@types/express": "latest",
     "@types/jsonwebtoken": "latest",
     "@types/node": "latest",
+    "@types/nodemailer": "latest",
     "@types/pg": "latest",
     "tsx": "latest",
     "typescript": "latest",

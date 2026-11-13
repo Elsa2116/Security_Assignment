@@ -28,6 +28,9 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      EMAIL_FROM: SecureFlow <no-reply@secureflow.local>
     ports:
       - "3000:3000"
     depends_on:
@@ -72,6 +75,9 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      EMAIL_FROM: SecureFlow <no-reply@secureflow.local>
     depends_on:
       postgres:
         condition: service_healthy
