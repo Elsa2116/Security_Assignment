@@ -50,8 +50,8 @@ api.post('/requests', requireAuth, async (req: AuthenticatedRequest, res) => {
         if (existing.rows[0].request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT');
         return client.query('SELECT id,status,version FROM app.requests WHERE id=$1', [existing.rows[0].response_ref]);
       }
-      const profile = await client.query<{ organization_id: string; department_id: string; manager_user_id: string }>(`SELECT up.organization_id,up.department_id,d.manager_user_id FROM app.user_profiles up JOIN app.departments d ON d.id=up.department_id WHERE up.user_id=$1 AND up.status='ACTIVE'`, [req.user!.id]);
-      if (profile.rowCount !== 1) throw new Error('PROFILE_NOT_ADMITTED');
+      const profile = await client.query<{ organization_id: string; department_id: string; manager_user_id: string | null }>(`SELECT up.organization_id,up.department_id,COALESCE(d.manager_user_id,(SELECT admin_profile.user_id FROM app.user_profiles admin_profile JOIN app.user_roles admin_role ON admin_role.user_id=admin_profile.user_id AND admin_role.revoked_at IS NULL JOIN app.roles admin_role_definition ON admin_role_definition.id=admin_role.role_id WHERE admin_profile.organization_id=up.organization_id AND admin_profile.status='ACTIVE' AND admin_role_definition.code='ADMIN' LIMIT 1)) AS manager_user_id FROM app.user_profiles up JOIN app.departments d ON d.id=up.department_id WHERE up.user_id=$1 AND up.status='ACTIVE'`, [req.user!.id]);
+      if (profile.rowCount !== 1 || !profile.rows[0].manager_user_id) throw new Error('PROFILE_NOT_ADMITTED');
       const inserted = await client.query<{ id: string; status: string; version: number }>(`INSERT INTO app.requests(organization_id,department_id,owner_id,assigned_manager_id,type,title,description,payload_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,status,version`, [profile.rows[0].organization_id, profile.rows[0].department_id, req.user!.id, profile.rows[0].manager_user_id, parsed.data.type, parsed.data.title, parsed.data.description, JSON.stringify(parsed.data.payload)]);
       await client.query('INSERT INTO app.request_history(request_id,actor_id,to_status,changed_fields) VALUES ($1,$2,$3,$4)', [inserted.rows[0].id, req.user!.id, 'PENDING', JSON.stringify(parsed.data)]);
       await client.query('INSERT INTO app.idempotency_keys(user_id,key,route,request_hash,response_ref,expires_at) VALUES ($1,$2,$3,$4,$5,now()+interval \'24 hours\')', [req.user!.id, idempotency, 'POST /requests', requestHash, inserted.rows[0].id]);
@@ -151,6 +151,8 @@ api.post('/admin/members/:userId/admit', requireAuth, async (req: AuthenticatedR
       if (verified.rows[0]?.email_verified !== true) throw new Error('EMAIL_NOT_VERIFIED');
       const department = await client.query('SELECT id FROM app.departments WHERE id=$1 AND organization_id=$2', [body.data.departmentId, body.data.organizationId]);
       if (!department.rowCount) throw new Error('DEPARTMENT_INVALID');
+      // Departments without a configured manager use the organization admin as the approval owner.
+      await client.query('UPDATE app.departments SET manager_user_id=COALESCE(manager_user_id,$1),updated_at=now() WHERE id=$2', [req.user!.id, body.data.departmentId]);
       const profile = await client.query(`UPDATE app.user_profiles SET organization_id=$1,department_id=$2,status='ACTIVE',email_verified_at=now(),updated_at=now() WHERE user_id=$3 AND status='PENDING_ADMISSION' RETURNING user_id AS "userId",name,email_normalized AS email,status,organization_id AS "organizationId",department_id AS "departmentId"`, [body.data.organizationId, body.data.departmentId, req.params.userId]);
       if (!profile.rowCount) throw new Error('MEMBER_NOT_PENDING');
       const role = await client.query<{ id: string }>('SELECT id FROM app.roles WHERE code=\'USER\' LIMIT 1');
