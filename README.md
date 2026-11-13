@@ -25,6 +25,3 @@ npm run dev
 
 The API health endpoint is `GET /health`; Better Auth routes are under `/api/auth/*`.
 
-## Next implementation slices
-
-The scaffold includes the database foundation, role assignment, refresh-token rotation, audit event transactions, and Better Auth wiring. Contract-specific route handlers, MFA policy enforcement, approval workflows, encrypted backup jobs, alert delivery, and end-to-end security tests should be added in the next slices against the complete contract text.
