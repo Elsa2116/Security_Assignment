@@ -4,7 +4,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../auth/better-auth.js';
 import { query } from '../db/pool.js';
 
-export type AuthenticatedRequest = Request & { user?: { id: string; email?: string; name?: string }; session?: unknown; requestId?: string };
+export type AuthenticatedRequest = Request & { user?: { id: string; email?: string; name?: string }; session?: { id?: string }; requestId?: string };
 
 // Attach a correlation ID to every request so API responses and audit entries can be traced together.
 export function requestContext(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -19,7 +19,11 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers), query: { disableCookieCache: true } });
     if (!session) return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' }, meta: { requestId: req.requestId } });
     req.user = { id: session.user.id, email: session.user.email, name: session.user.name };
-    req.session = session.session;
+    req.session = session.session as { id?: string };
+    // Enforce the second factor for every application route after password authentication succeeds.
+    const mfa = await query<{ enabled: boolean; verified: boolean }>(`SELECT EXISTS (SELECT 1 FROM app.mfa_credentials WHERE user_id=$1 AND enabled_at IS NOT NULL) AS enabled, EXISTS (SELECT 1 FROM auth.session WHERE id=$2 AND mfa_verified_at IS NOT NULL) AS verified`, [req.user.id, req.session.id ?? '']);
+    const challengeRoute = req.path === '/auth/mfa/challenge' || req.path === '/auth/mfa/status';
+    if (mfa.rows[0]?.enabled && !mfa.rows[0]?.verified && !challengeRoute) return res.status(403).json({ error: { code: 'MFA_REQUIRED', message: 'MFA verification required' }, meta: { requestId: req.requestId } });
     return next();
   } catch {
     return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' }, meta: { requestId: req.requestId } });

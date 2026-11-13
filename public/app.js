@@ -11,7 +11,7 @@ const roleLabels = {
   AUDITOR: 'Auditor'
 };
 const formatRoles = roles => roles?.length ? roles.map(role => roleLabels[role] || role).join(', ') : 'No role assigned';
-const viewLabels = { overview: 'Overview', requests: 'My requests', 'new-request': 'New request', admin: 'Admin console', settings: 'Settings', help: 'Help center' };
+const viewLabels = { overview: 'Overview', requests: 'My requests', 'new-request': 'New request', admin: 'Admin console', 'admin-security': 'Security center', settings: 'Settings', help: 'Help center' };
 
 // Toggle password visibility locally; the value is never sent anywhere except the auth request.
 document.querySelectorAll('.toggle-password').forEach(button => {
@@ -41,6 +41,7 @@ function showAuthForm(form) {
   document.querySelector('#login').classList.toggle('hidden', form !== 'login');
   document.querySelector('#forgot-password').classList.toggle('hidden', form !== 'forgot-password');
   document.querySelector('#reset-password').classList.toggle('hidden', form !== 'reset-password');
+  document.querySelector('#mfa-challenge').classList.toggle('hidden', form !== 'mfa-challenge');
   statusBox.textContent = '';
   statusBox.style.display = 'none';
 }
@@ -57,9 +58,11 @@ document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('cl
   document.querySelector('#request-form').hidden = view !== 'new-request';
   document.querySelector('#requests').closest('.requests-card').hidden = view !== 'requests';
   document.querySelector('#admin-panel').classList.toggle('active', view === 'admin');
+  document.querySelector('#admin-security-panel').classList.toggle('active', view === 'admin-security');
   document.querySelector('#settings-panel').classList.toggle('active', view === 'settings');
   document.querySelector('#help-panel').classList.toggle('active', view === 'help');
   if (view === 'admin') void loadAdminPanel();
+  if (view === 'admin-security') void loadAdminSecurity();
   if (view === 'settings') void loadSecuritySettings();
   if (view === 'new-request') document.querySelector('#request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (view === 'requests') document.querySelector('#requests').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -94,6 +97,18 @@ if (initialQuery.get('reset') === '1' && pendingResetToken) {
   window.history.replaceState({}, document.title, window.location.pathname);
 }
 
+// Load the organization security center from restricted PostgreSQL-backed admin endpoints.
+async function loadAdminSecurity() {
+  try {
+    const [integrity, audit, alerts, incidents] = await Promise.all([api('/api/v1/admin/audit/integrity'), api('/api/v1/admin/audit'), api('/api/v1/admin/alerts'), api('/api/v1/admin/incidents')]);
+    document.querySelector('#audit-integrity').textContent = integrity.valid ? `Valid chain · ${integrity.checked} entries checked` : 'Integrity failure detected';
+    const render = (selector, rows, empty, mapper) => { const box = document.querySelector(selector); box.replaceChildren(); if (!rows.length) { box.textContent = empty; return; } rows.forEach(row => { const item = document.createElement('div'); item.className = 'security-item'; mapper(row, item); box.append(item); }); };
+    render('#audit-list', audit, 'No audit events recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = row.action; const detail = document.createElement('span'); detail.textContent = `${row.outcome} · ${new Date(row.occurredAt).toLocaleString()}`; item.append(title, detail); });
+    render('#alert-list', alerts, 'No security alerts recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = `${row.severity} · ${row.rule}`; const detail = document.createElement('span'); detail.textContent = row.acknowledgedAt ? `Acknowledged ${new Date(row.acknowledgedAt).toLocaleString()}` : 'Unacknowledged'; item.append(title, detail); if (!row.acknowledgedAt) { const button = document.createElement('button'); button.className = 'secondary'; button.textContent = 'Acknowledge'; button.addEventListener('click', async () => { await api(`/api/v1/admin/alerts/${row.id}`, { method: 'PATCH', headers: csrfHeaders(), body: JSON.stringify({ action: 'ACKNOWLEDGE' }) }); await loadAdminSecurity(); }); item.append(button); } });
+    render('#incident-list', incidents, 'No incidents recorded.', (row, item) => { const title = document.createElement('strong'); title.textContent = `${row.severity} · ${row.status}`; const detail = document.createElement('span'); detail.textContent = row.summary; item.append(title, detail); });
+  } catch (error) { showStatus(error.message, true); }
+}
+
 document.querySelector('#show-login').addEventListener('click', event => {
   event.preventDefault();
   showAuthForm('login');
@@ -114,6 +129,10 @@ document.querySelector('#reset-back-to-login').addEventListener('click', event =
   event.preventDefault();
   showAuthForm('login');
 });
+document.querySelector('#mfa-back-to-login').addEventListener('click', event => {
+  event.preventDefault();
+  showAuthForm('login');
+});
 
 // Send same-origin JSON requests while preserving Better Auth cookies.
 async function api(path, options = {}) {
@@ -123,7 +142,7 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || `Request failed (${response.status})`);
+  if (!response.ok) { const error = new Error(body?.error?.message || `Request failed (${response.status})`); error.code = body?.error?.code; throw error; }
   return body.data ?? body;
 }
 
@@ -252,6 +271,7 @@ async function loadDashboard() {
     document.querySelector('#logout').hidden = false;
     const admin = profile.roles?.some(role => ['ADMIN', 'SECURITY_ADMIN'].includes(role));
     document.querySelector('#admin-nav').hidden = !admin;
+    document.querySelector('#admin-security-nav').hidden = !admin;
     // Keep role boundaries visible in the UI: admins manage workflows, employees submit them.
     document.querySelector('#new-request-nav').hidden = admin;
     document.querySelector('#my-requests-nav').hidden = admin;
@@ -265,14 +285,15 @@ async function loadDashboard() {
     document.querySelector('#process-copy').textContent = admin ? 'Review every decision with requester context, admit verified employees, and keep a complete audit trail for your organization.' : 'Submit a request with a clear business reason. Your organization approver reviews it, records a decision, and SecureFlow notifies you of the outcome.';
     const requestedView = new URLSearchParams(window.location.search).get('view');
     if (admin) {
-      const target = requestedView === 'settings' || requestedView === 'help' ? requestedView : 'admin';
+      const target = ['settings', 'help', 'admin-security'].includes(requestedView || '') ? requestedView : 'admin';
       document.querySelector(`[data-view="${target}"]`).click();
       void loadAdminPanel();
     } else {
       const target = ['overview', 'requests', 'new-request', 'settings', 'help'].includes(requestedView || '') ? requestedView : 'overview';
       document.querySelector(`[data-view="${target}"]`).click();
     }
-  } catch {
+  } catch (error) {
+    if (error.code === 'MFA_REQUIRED') { showAuthForm('mfa-challenge'); showStatus('Enter your authenticator code to continue.'); }
     // Anonymous visitors stay on the registration/sign-in view.
   }
 }
@@ -342,6 +363,16 @@ document.querySelector('#login').addEventListener('submit', async event => {
   } catch (error) {
     showStatus(error.message, true);
   }
+});
+
+// Complete the enforced second factor before loading any protected dashboard data.
+document.querySelector('#mfa-challenge').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await api('/api/v1/auth/mfa/challenge', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ code: document.querySelector('#mfa-code').value }) });
+    showStatus('Identity verified.');
+    await loadDashboard();
+  } catch (error) { showStatus(error.message, true); }
 });
 
 // Sign out through Better Auth so the server revokes the session and clears cookies.

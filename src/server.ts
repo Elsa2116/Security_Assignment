@@ -9,6 +9,16 @@ import { verifyCaptcha } from './security/captcha.js';
 import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
 
 const app = express();
+
+// Check only the first five SHA-1 characters with HIBP's k-anonymity API; the password and full hash never leave this process.
+async function isBreachedPassword(password: string) {
+  if (process.env.HIBP_PASSWORD_CHECK !== 'true') return false;
+  const digest = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
+  const response = await fetch(`https://api.pwnedpasswords.com/range/${digest.slice(0, 5)}`, { headers: { 'User-Agent': 'SecureFlow-password-policy' } });
+  if (!response.ok) throw new Error('HIBP_UNAVAILABLE');
+  const suffix = digest.slice(5);
+  return (await response.text()).split('\n').some(line => line.split(':')[0]?.trim() === suffix);
+}
 // Helmet provides baseline browser security headers for every response.
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
@@ -42,6 +52,11 @@ app.all('/api/auth/{*splat}', async (req, res) => {
     if (typeof req.body?.password !== 'string' || req.body.password !== req.body?.confirmPassword) return res.status(422).json({ error: { code: 'PASSWORD_MISMATCH', message: 'Passwords do not match' } });
     const captchaValid = await verifyCaptcha(req.body?.captchaToken || req.header('x-captcha-token'), req.ip ?? undefined);
     if (!captchaValid) return res.status(422).json({ error: { code: 'CAPTCHA_REQUIRED', message: 'CAPTCHA verification failed' } });
+    try {
+      if (await isBreachedPassword(String(req.body.password))) return res.status(422).json({ error: { code: 'PASSWORD_BREACHED', message: 'Choose a password that has not appeared in a known breach' } });
+    } catch {
+      if (process.env.NODE_ENV === 'production') return res.status(503).json({ error: { code: 'PASSWORD_CHECK_UNAVAILABLE', message: 'Password security check is temporarily unavailable' } });
+    }
     delete req.body.confirmPassword;
   }
   // Protect the login endpoint before Better Auth performs password work.
