@@ -7,6 +7,8 @@ import { query } from './db/pool.js';
 import { api } from './api.js';
 import { verifyCaptcha } from './security/captcha.js';
 import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
+// Run the outbox email worker in the same process so the free Render web service can deliver verification emails without a paid worker service.
+import './workers/index.js';
 
 const app = express();
 const verificationResends = new Map<string, number>();
