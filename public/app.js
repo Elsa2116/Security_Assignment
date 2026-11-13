@@ -47,6 +47,10 @@ if (new URLSearchParams(window.location.search).get('verified') === '1') {
   showAuthForm('login');
   showStatus('Your email is verified. You can sign in now.');
   window.history.replaceState({}, document.title, window.location.pathname);
+} else if (new URLSearchParams(window.location.search).get('signin') === '1') {
+  // Sign-out always returns to the sign-in form instead of the registration form.
+  showAuthForm('login');
+  window.history.replaceState({}, document.title, window.location.pathname);
 }
 
 document.querySelector('#show-login').addEventListener('click', event => {
@@ -225,7 +229,7 @@ document.querySelector('#login').addEventListener('submit', async event => {
 document.querySelector('#logout').addEventListener('click', async () => {
   try {
     await api('/api/auth/sign-out', { method: 'POST', headers: csrfHeaders(), body: '{}' });
-    location.reload();
+    window.location.assign('/?signin=1');
   } catch (error) {
     showStatus(error.message, true);
   }
