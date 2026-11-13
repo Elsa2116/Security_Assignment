@@ -31,6 +31,7 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       EMAIL_FROM: SecureFlow <no-reply@secureflow.local>
+      HIBP_PASSWORD_CHECK: ${HIBP_PASSWORD_CHECK:-false}
     ports:
       - "3000:3000"
     depends_on:
