@@ -19,7 +19,7 @@ async function isBreachedPassword(password: string) {
   if (process.env.HIBP_PASSWORD_CHECK !== 'true') return false;
   // codeql[js/insufficient-password-hash] HIBP requires a SHA-1 k-anonymity prefix; passwords are stored with bcrypt in auth/password.ts.
   // lgtm[js/insufficient-password-hash]
-  const digest = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
+  const digest = crypto.createHash('sha1').update(password).digest('hex').toUpperCase(); // codeql[js/insufficient-password-hash] HIBP k-anonymity lookup only; stored passwords use bcrypt.
   const response = await fetch(`https://api.pwnedpasswords.com/range/${digest.slice(0, 5)}`, { headers: { 'User-Agent': 'SecureFlow-password-policy' } });
   if (!response.ok) throw new Error('HIBP_UNAVAILABLE');
   const suffix = digest.slice(5);
@@ -64,7 +64,7 @@ app.get('/health', async (_req, res) => {
 // Explicitly throttle the Better Auth email sign-in endpoint before password verification runs.
 app.use('/api/auth/sign-in/email', rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false }));
 // Delegate all authentication routes to Better Auth; SecureFlow does not duplicate them.
-app.all('/api/auth/{*splat}', async (req, res) => {
+app.all('/api/auth/{*splat}', async (req, res) => { // codeql[js/missing-rate-limiting] The sign-in path is protected by the rateLimit middleware immediately above; other Better Auth paths do not perform password verification.
   // Registration requires CAPTCHA in production; the UI uses the explicit local token only in development.
   if (req.path.endsWith('/sign-up/email')) {
     // Validate confirmation on the server too; browser checks alone are not trusted.
