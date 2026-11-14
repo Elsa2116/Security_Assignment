@@ -42,6 +42,7 @@
     "zod": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/express": "latest",
     "@types/jsonwebtoken": "latest",
     "@types/node": "latest",

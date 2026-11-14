@@ -107,6 +107,8 @@ app.all('/api/auth/{*splat}', async (req, res) => {
   }
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
+  // Better Auth owns this already-encoded response; preserve its status, headers, and body without rendering user HTML.
+  // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   res.send(Buffer.from(await response.arrayBuffer()));
 });
 

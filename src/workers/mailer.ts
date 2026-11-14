@@ -20,12 +20,16 @@ export async function deliverEmail(eventType: string, payload: { email?: string;
   if (!payload.email || !payload.url) throw new Error('email_payload_incomplete');
   const isReset = eventType === 'PASSWORD_RESET';
   const title = isReset ? 'Reset your SecureFlow password' : 'Verify your SecureFlow email';
-  const escapedUrl = payload.url.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+  const verificationUrl = new URL(payload.url);
+  if (!['http:', 'https:'].includes(verificationUrl.protocol) || verificationUrl.username || verificationUrl.password) {
+    throw new Error('email_url_invalid');
+  }
+  const safeUrl = verificationUrl.href;
   await transport.sendMail({
     from: process.env.EMAIL_FROM ?? 'SecureFlow <no-reply@secureflow.local>',
     to: payload.email,
     subject: title,
     text: isReset ? `Reset your password using this link: ${payload.url}` : `Verify your SecureFlow email using this link: ${payload.url}`,
-    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#172033"><h1 style="color:#1d5bd7">SecureFlow</h1><h2>${isReset ? 'Reset your password' : 'Welcome to SecureFlow'}</h2><p>${isReset ? 'Use the button below to choose a new password.' : 'Thanks for registering. Verify your email address to activate your SecureFlow account.'}</p><p><a href="${escapedUrl}" style="display:inline-block;background:#1d5bd7;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">${isReset ? 'Reset Password' : 'Verify Email Address'}</a></p><p style="color:#64748b;font-size:13px">${isReset ? 'If you did not request this, you can ignore this email.' : 'This verification link expires after 15 minutes and can only be used once.'}</p></div>`
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#172033"><h1 style="color:#1d5bd7">SecureFlow</h1><h2>${isReset ? 'Reset your password' : 'Welcome to SecureFlow'}</h2><p>${isReset ? 'Use the button below to choose a new password.' : 'Thanks for registering. Verify your email address to activate your SecureFlow account.'}</p><p><a href="${safeUrl}" style="display:inline-block;background:#1d5bd7;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">${isReset ? 'Reset Password' : 'Verify Email Address'}</a></p><p style="color:#64748b;font-size:13px">${isReset ? 'If you did not request this, you can ignore this email.' : 'This verification link expires after 15 minutes and can only be used once.'}</p></div>`
   });
 }

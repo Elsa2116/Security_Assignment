@@ -15,7 +15,7 @@ function encrypt(value: string) {
 
 // Decrypt only inside the verification path; callers receive no seed value.
 function decrypt(value: string) {
-  const raw = Buffer.from(value, 'base64url'); const decipher = crypto.createDecipheriv('aes-256-gcm', key(), raw.subarray(0, 12)); decipher.setAuthTag(raw.subarray(12, 28));
+  const raw = Buffer.from(value, 'base64url'); const decipher = crypto.createDecipheriv('aes-256-gcm', key(), raw.subarray(0, 12), { authTagLength: 16 }); decipher.setAuthTag(raw.subarray(12, 28));
   return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8');
 }
 

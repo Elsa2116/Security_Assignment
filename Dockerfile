@@ -13,7 +13,9 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 # The backup service invokes pg_dump; keep the PostgreSQL client in the runtime image.
-RUN apk add --no-cache postgresql-client
+RUN apk add --no-cache postgresql-client \
+  && addgroup -S secureflow \
+  && adduser -S secureflow -G secureflow
 COPY --from=build /app/package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
@@ -21,5 +23,7 @@ COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/auth.ts ./auth.ts
 COPY --from=build /app/public ./public
 COPY migrations ./migrations
+RUN mkdir -p /app/backups && chown -R secureflow:secureflow /app
+USER secureflow
 EXPOSE 3000
 CMD ["node", "dist/src/server.js"]

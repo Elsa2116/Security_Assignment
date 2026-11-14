@@ -58,7 +58,7 @@ export async function verifyEncryptedBackup(storageKey: string, expectedChecksum
   const checksum = crypto.createHash('sha256').update(payload).digest('hex');
   if (checksum !== expectedChecksum) throw new Error('backup_checksum_mismatch');
   if (payload.subarray(0, 6).toString() !== 'SFBAK1') throw new Error('backup_format_invalid');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), payload.subarray(6, 18));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), payload.subarray(6, 18), { authTagLength: 16 });
   decipher.setAuthTag(payload.subarray(18, 34));
   decipher.update(payload.subarray(34)); decipher.final();
   return { valid: true, checksum, bytes: payload.byteLength };

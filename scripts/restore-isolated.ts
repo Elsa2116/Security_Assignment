@@ -18,7 +18,7 @@ if (process.env.ALLOW_ISOLATED_RESTORE !== 'true') throw new Error('Set ALLOW_IS
 const payload = await readFile(path.resolve(backupFile));
 if (payload.subarray(0, 6).toString() !== 'SFBAK1') throw new Error('backup_format_invalid');
 const derivedKey = crypto.createHash('sha256').update(config.BACKUP_ENCRYPTION_KEY).digest();
-const decipher = crypto.createDecipheriv('aes-256-gcm', derivedKey, payload.subarray(6, 18));
+const decipher = crypto.createDecipheriv('aes-256-gcm', derivedKey, payload.subarray(6, 18), { authTagLength: 16 });
 decipher.setAuthTag(payload.subarray(18, 34));
 const dump = Buffer.concat([decipher.update(payload.subarray(34)), decipher.final()]);
 const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'secureflow-restore-'));
