@@ -10,7 +10,8 @@ const transport = nodemailer.createTransport({
   port: Number(process.env.SMTP_PORT ?? 1025),
   // SMTP providers use implicit TLS on 465 and STARTTLS on 587; Mailpit remains local plain SMTP.
   secure: Number(process.env.SMTP_PORT ?? 1025) === 465,
-  requireTLS: Number(process.env.SMTP_PORT ?? 1025) === 587,
+  // Respect SMTP_USE_TLS for providers such as Brevo on port 2525 as well as the conventional 587 port.
+  requireTLS: process.env.SMTP_USE_TLS === 'true' || Number(process.env.SMTP_PORT ?? 1025) === 587,
   auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD ?? '' } : undefined
 });
 
