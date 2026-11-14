@@ -64,7 +64,7 @@ app.get('/health', async (_req, res) => {
 // Explicitly throttle the Better Auth email sign-in endpoint before password verification runs.
 app.use('/api/auth/sign-in/email', rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false }));
 // Delegate all authentication routes to Better Auth; SecureFlow does not duplicate them.
-app.all('/api/auth/{*splat}', async (req, res) => { // codeql[js/missing-rate-limiting] The sign-in path is protected by the rateLimit middleware immediately above; other Better Auth paths do not perform password verification.
+app.all('/api/auth/{*splat}', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
   // Registration requires CAPTCHA in production; the UI uses the explicit local token only in development.
   if (req.path.endsWith('/sign-up/email')) {
     // Validate confirmation on the server too; browser checks alone are not trusted.
