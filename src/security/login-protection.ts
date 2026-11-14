@@ -1,20 +1,8 @@
-import type { RequestHandler } from 'express';
 import { query, withTransaction } from '../db/pool.js';
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
-
-// Apply an explicit request-level limiter to sensitive routes; this complements the database-backed login lockout.
-export function routeRateLimit(scope: string, maxAttempts = MAX_ATTEMPTS): RequestHandler {
-  return (req, res, next) => {
-    const key = `${scope}:${req.ip ?? 'unknown'}`;
-    const current = attempts.get(key);
-    if (!current || current.resetAt <= Date.now()) attempts.set(key, { count: 1, resetAt: Date.now() + WINDOW_MS });
-    else if (++current.count > maxAttempts) return res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many requests; try again later' } });
-    next();
-  };
-}
 
 // Apply a small in-process throttle for local deployments; production should back this with Redis.
 export function isRateLimited(key: string) {
