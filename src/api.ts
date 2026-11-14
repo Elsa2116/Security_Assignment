@@ -6,6 +6,7 @@ import { appendAudit, verifyAuditChain } from './security/audit-chain.js';
 import { AuthenticatedRequest, failure, requireAuth, requirePermission, requestContext, result } from './security/http.js';
 import { beginMfaEnrollment, confirmMfa, verifyMfa } from './security/mfa.js';
 import { revokeSession } from './security/tokens.js';
+import { routeRateLimit } from './security/login-protection.js';
 
 const uuid = z.string().uuid();
 const requestSchema = z.object({ type: z.enum(['LEAVE','EQUIPMENT','SERVICE']), title: z.string().trim().min(1).max(160), description: z.string().max(4000).default(''), payload: z.record(z.string(), z.unknown()) });
@@ -279,7 +280,8 @@ api.post('/auth/mfa/confirm', requireAuth, async (req: AuthenticatedRequest, res
   if (!confirmed) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
   return result(res, req.requestId, confirmed);
 });
-api.post('/auth/mfa/challenge', requireAuth, async (req: AuthenticatedRequest, res) => {
+// Limit MFA guesses independently from password-login throttling.
+api.post('/auth/mfa/challenge', routeRateLimit('mfa-challenge', 5), requireAuth, async (req: AuthenticatedRequest, res) => {
   const code = z.string().min(6).max(20).safeParse(req.body?.code);
   if (!code.success || !(await verifyMfa(req.user!.id, code.data))) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
   await query('UPDATE auth.session SET mfa_verified_at=now(),updated_at=now() WHERE id=$1 AND user_id=$2', [req.session?.id ?? '', req.user!.id]);
@@ -300,7 +302,8 @@ api.get('/admin/audit', requireAuth, async (req: AuthenticatedRequest, res) => {
   const r = await query('SELECT sequence,actor_user_id AS "actorId",action,resource_type AS "resourceType",resource_id AS "resourceId",outcome,created_at AS "occurredAt",correlation_id AS "correlationId",entry_hash AS "entryHash" FROM app.audit_events ORDER BY sequence DESC LIMIT 100');
   return result(res, req.requestId, r.rows);
 });
-api.get('/admin/audit/integrity', requireAuth, async (req: AuthenticatedRequest, res) => {
+// Limit repeated audit-chain verification requests because they can be CPU intensive.
+api.get('/admin/audit/integrity', routeRateLimit('audit-integrity', 10), requireAuth, async (req: AuthenticatedRequest, res) => {
   if (!(await requirePermission(req.user!.id, 'audit:verify'))) return failure(res, req.requestId, 'FORBIDDEN', 'Audit verification access required', 403);
   return result(res, req.requestId, await verifyAuditChain());
 });

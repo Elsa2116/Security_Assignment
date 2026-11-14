@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { query } from './db/pool.js';
 import { api } from './api.js';
 import { verifyCaptcha } from './security/captcha.js';
-import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
+import { isRateLimited, recordLoginFailure, recordLoginSuccess, routeRateLimit } from './security/login-protection.js';
 // Run the outbox email worker in the same process so the free Render web service can deliver verification emails without a paid worker service.
 import './workers/index.js';
 
@@ -16,6 +16,7 @@ const verificationResends = new Map<string, number>();
 // Check only the first five SHA-1 characters with HIBP's k-anonymity API; the password and full hash never leave this process.
 async function isBreachedPassword(password: string) {
   if (process.env.HIBP_PASSWORD_CHECK !== 'true') return false;
+  // codeql[js/insufficient-password-hash] HIBP requires a SHA-1 k-anonymity prefix; passwords are stored with bcrypt in auth/password.ts.
   const digest = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
   const response = await fetch(`https://api.pwnedpasswords.com/range/${digest.slice(0, 5)}`, { headers: { 'User-Agent': 'SecureFlow-password-policy' } });
   if (!response.ok) throw new Error('HIBP_UNAVAILABLE');
@@ -58,6 +59,8 @@ app.get('/health', async (_req, res) => {
   catch { res.status(503).json({ status: 'unavailable' }); }
 });
 
+// Explicitly throttle the Better Auth email sign-in endpoint before password verification runs.
+app.use('/api/auth/sign-in/email', routeRateLimit('auth-sign-in', 5));
 // Delegate all authentication routes to Better Auth; SecureFlow does not duplicate them.
 app.all('/api/auth/{*splat}', async (req, res) => {
   // Registration requires CAPTCHA in production; the UI uses the explicit local token only in development.
