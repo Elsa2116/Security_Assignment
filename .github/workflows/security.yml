@@ -23,7 +23,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # npm install resolves optional peer packages used by the current Vitest toolchain on Linux runners.
+        run: npm install --ignore-scripts
 
       - name: Dependency audit
         run: npm audit --audit-level=high
