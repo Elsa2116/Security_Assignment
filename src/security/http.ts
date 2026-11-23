@@ -21,7 +21,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     req.user = { id: session.user.id, email: session.user.email, name: session.user.name };
     req.session = session.session as { id?: string };
     // Enforce the second factor for every application route after password authentication succeeds.
-    const mfa = await query<{ enabled: boolean; verified: boolean }>(`SELECT EXISTS (SELECT 1 FROM app.mfa_credentials WHERE user_id=$1 AND enabled_at IS NOT NULL) AS enabled, EXISTS (SELECT 1 FROM auth.session WHERE id=$2 AND mfa_verified_at IS NOT NULL) AS verified`, [req.user.id, req.session.id ?? '']);
+    const mfa = await query<{ enabled: boolean; verified: boolean }>(`SELECT EXISTS (SELECT 1 FROM app.mfa_credentials WHERE user_id=$1 AND enabled_at IS NOT NULL) AS enabled, EXISTS (SELECT 1 FROM public.session WHERE id=$2 AND mfa_verified_at IS NOT NULL) AS verified`, [req.user.id, req.session.id ?? '']);
     // Permit the complete MFA enrollment/recovery flow before enforcing the second factor.
     const challengeRoute = ['/auth/mfa/challenge', '/auth/mfa/status', '/auth/mfa/enroll', '/auth/mfa/confirm'].includes(req.path);
     if (mfa.rows[0]?.enabled && !mfa.rows[0]?.verified && !challengeRoute) return res.status(403).json({ error: { code: 'MFA_REQUIRED', message: 'MFA verification required' }, meta: { requestId: req.requestId } });

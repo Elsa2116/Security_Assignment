@@ -6,8 +6,8 @@ import { hashPassword, verifyPassword } from './password.js';
 
 // Better Auth owns supported authentication operations. Application data access remains raw SQL.
 // Do not pass a PostgreSQL startup `options` value here: Neon pooled connections reject
-// `search_path` as an unsupported startup parameter. SecureFlow uses explicit auth.* table
-// names for application queries, so a connection-level search_path is unnecessary.
+// `search_path` as an unsupported startup parameter. Better Auth uses its supported
+// PostgreSQL adapter defaults in public; application-specific tables remain in app.
 export const authPool = new Pool({ connectionString: config.DATABASE_URL, max: 10 });
 
 // This configuration keeps credential lifecycle, sessions, and verification in Better Auth,

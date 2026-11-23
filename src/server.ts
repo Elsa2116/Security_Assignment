@@ -108,7 +108,7 @@ app.all('/api/auth/{*splat}', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, s
   if (req.path.endsWith('/send-verification-email') && response.status >= 400) return res.status(200).json({ message: 'If the account is eligible, a verification email was sent.' });
   if (req.path.endsWith('/sign-in/email') && response.status >= 400) {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
-    const unverified = await query('SELECT 1 FROM auth."user" WHERE lower(email)=$1 AND email_verified=false', [email]);
+    const unverified = await query('SELECT 1 FROM public."user" WHERE lower(email)=$1 AND email_verified=false', [email]);
     if (unverified.rowCount) return res.status(403).json({ error: { code: 'EMAIL_NOT_VERIFIED', message: 'Please verify your email address before signing in.' } });
   }
   // Record only outcome metadata; password and token contents never enter logs or alerts.

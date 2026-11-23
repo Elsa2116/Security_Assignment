@@ -22,7 +22,7 @@ export async function verifyAccessToken(token: string) {
   if (!payload.jti || !payload.sid || !payload.sub) throw new Error('invalid_token_claims');
   const revoked = await query('SELECT 1 FROM app.jwt_revocations WHERE jti=$1 AND expires_at>now()', [payload.jti]);
   if (revoked.rowCount) throw new Error('revoked_token');
-  const session = await query('SELECT 1 FROM auth.session WHERE id=$1 AND user_id=$2 AND expires_at>now()', [payload.sid, payload.sub]);
+  const session = await query('SELECT 1 FROM public.session WHERE id=$1 AND user_id=$2 AND expires_at>now()', [payload.sid, payload.sub]);
   if (!session.rowCount) throw new Error('revoked_session');
   return payload;
 }
@@ -67,7 +67,7 @@ export async function rotateRefreshToken(oldToken: string, userId: string) {
 // Revoke the Better Auth session so previously issued access tokens fail the live-session check.
 export async function revokeSession(userId: string, sessionId: string, reason = 'logout') {
   await withTransaction(async (client) => {
-    await client.query('UPDATE auth.session SET revoked_at=now() WHERE id=$1 AND user_id=$2', [sessionId, userId]);
+    await client.query('UPDATE public.session SET revoked_at=now() WHERE id=$1 AND user_id=$2', [sessionId, userId]);
     await client.query("INSERT INTO app.audit_events(actor_user_id,action,resource_type,resource_id,outcome) VALUES ($1,'session.revoke','session',$2,'success')", [userId, sessionId]);
   });
   emitSecurityEvent('auth.session_revoke', { userId, sessionId, reason, outcome: 'success' });

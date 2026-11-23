@@ -22,6 +22,7 @@ try {
     await client.query('INSERT INTO app.schema_migrations(version) VALUES ($1)', [file]);
   }
   await client.query('COMMIT');
+  console.log(JSON.stringify({ event: 'database.migrations_complete', applied: files.length }));
 } catch (error) {
   await client.query('ROLLBACK');
   throw error;

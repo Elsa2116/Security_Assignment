@@ -131,7 +131,7 @@ api.get('/admin/overview', requireAuth, async (req: AuthenticatedRequest, res) =
 // Admins use this queue to manage verified users who are waiting for organization admission.
 api.get('/admin/members', requireAuth, async (req: AuthenticatedRequest, res) => {
   if (!(await requirePermission(req.user!.id, 'members:read'))) return failure(res, req.requestId, 'FORBIDDEN', 'Member administration required', 403);
-  const rows = await query(`SELECT up.user_id AS "userId",up.name,up.email_normalized AS email,up.status,up.organization_id AS "organizationId",up.department_id AS "departmentId",up.created_at AS "createdAt",au.email_verified AS "emailVerified" FROM app.user_profiles up JOIN auth."user" au ON au.id=up.user_id ORDER BY CASE WHEN up.status='PENDING_ADMISSION' THEN 0 ELSE 1 END,up.created_at DESC LIMIT 100`);
+  const rows = await query(`SELECT up.user_id AS "userId",up.name,up.email_normalized AS email,up.status,up.organization_id AS "organizationId",up.department_id AS "departmentId",up.created_at AS "createdAt",au.email_verified AS "emailVerified" FROM app.user_profiles up JOIN public."user" au ON au.id=up.user_id ORDER BY CASE WHEN up.status='PENDING_ADMISSION' THEN 0 ELSE 1 END,up.created_at DESC LIMIT 100`);
   return result(res, req.requestId, rows.rows);
 });
 
@@ -150,7 +150,7 @@ api.post('/admin/members/:userId/admit', requireAuth, async (req: AuthenticatedR
   if (!body.success) return failure(res, req.requestId, 'VALIDATION_ERROR', 'Organization and department are required', 422);
   try {
     const admitted = await withTransaction(async (client) => {
-      const verified = await client.query<{ email_verified: boolean }>('SELECT email_verified FROM auth."user" WHERE id=$1', [req.params.userId]);
+      const verified = await client.query<{ email_verified: boolean }>('SELECT email_verified FROM public."user" WHERE id=$1', [req.params.userId]);
       if (verified.rows[0]?.email_verified !== true) throw new Error('EMAIL_NOT_VERIFIED');
       const department = await client.query('SELECT id FROM app.departments WHERE id=$1 AND organization_id=$2', [body.data.departmentId, body.data.organizationId]);
       if (!department.rowCount) throw new Error('DEPARTMENT_INVALID');
@@ -258,7 +258,7 @@ async function decideRoleChange(req: AuthenticatedRequest, res: any, decision: '
       if (decision === 'APPROVED') {
         if (item.operation === 'GRANT') await client.query('INSERT INTO app.user_roles(user_id,role_id,assigned_by,grant_request_id) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id,role_id) DO UPDATE SET revoked_at=NULL,assigned_by=EXCLUDED.assigned_by', [item.target_user_id, item.role_id, req.user!.id, req.params.id]);
         else await client.query('UPDATE app.user_roles SET revoked_at=now() WHERE user_id=$1 AND role_id=$2', [item.target_user_id, item.role_id]);
-        await client.query('UPDATE auth.session SET revoked_at=now() WHERE user_id=$1', [item.target_user_id]).catch(() => undefined);
+        await client.query('UPDATE public.session SET revoked_at=now() WHERE user_id=$1', [item.target_user_id]).catch(() => undefined);
       }
       await appendAudit(client, { actorId: req.user!.id, action: `role-change.${decision.toLowerCase()}`, resourceType: 'role_change_request', resourceId: String(req.params.id), outcome: 'success', correlationId: String(req.requestId) });
       return { status: decision, roleCode: role.rows[0]?.code };
@@ -287,17 +287,17 @@ api.post('/auth/mfa/confirm', requireAuth, async (req: AuthenticatedRequest, res
 api.post('/auth/mfa/challenge', rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false }), requireAuth, async (req: AuthenticatedRequest, res) => {
   const code = z.string().min(6).max(20).safeParse(req.body?.code);
   if (!code.success || !(await verifyMfa(req.user!.id, code.data))) return failure(res, req.requestId, 'MFA_INVALID', 'Invalid MFA code', 401);
-  await query('UPDATE auth.session SET mfa_verified_at=now(),updated_at=now() WHERE id=$1 AND user_id=$2', [req.session?.id ?? '', req.user!.id]);
+  await query('UPDATE public.session SET mfa_verified_at=now(),updated_at=now() WHERE id=$1 AND user_id=$2', [req.session?.id ?? '', req.user!.id]);
   return result(res, req.requestId, { mfaVerified: true });
 });
 // Session metadata is safe to display because it excludes session tokens and refresh secrets.
 api.get('/auth/sessions', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const sessions = await query('SELECT id,expires_at AS "expiresAt",ip_address AS "ipAddress",user_agent AS "userAgent",created_at AS "createdAt",updated_at AS "updatedAt" FROM auth.session WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC', [req.user!.id]);
+  const sessions = await query('SELECT id,expires_at AS "expiresAt",ip_address AS "ipAddress",user_agent AS "userAgent",created_at AS "createdAt",updated_at AS "updatedAt" FROM public.session WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC', [req.user!.id]);
   return result(res, req.requestId, sessions.rows);
 });
 // Revoke one owned session or all sessions for logout-all/password-change behavior.
 api.delete('/auth/sessions/:id', requireAuth, async (req: AuthenticatedRequest, res) => { await revokeSession(req.user!.id, String(req.params.id)); return res.status(204).send(); });
-api.post('/auth/sessions/revoke-all', requireAuth, async (req: AuthenticatedRequest, res) => { await query('UPDATE auth.session SET revoked_at=now() WHERE user_id=$1', [req.user!.id]); return result(res, req.requestId, { revoked: true }); });
+api.post('/auth/sessions/revoke-all', requireAuth, async (req: AuthenticatedRequest, res) => { await query('UPDATE public.session SET revoked_at=now() WHERE user_id=$1', [req.user!.id]); return result(res, req.requestId, { revoked: true }); });
 
 // Audit reads and integrity checks are protected by separate fresh permissions.
 api.get('/admin/audit', requireAuth, async (req: AuthenticatedRequest, res) => {
