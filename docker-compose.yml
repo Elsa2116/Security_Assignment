@@ -28,6 +28,9 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+      REDIS_URL: redis://redis:6379
+      SIEM_INGEST_URL: ${SIEM_INGEST_URL:-}
+      SIEM_INGEST_TOKEN: ${SIEM_INGEST_TOKEN:-}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
@@ -40,6 +43,7 @@ services:
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-}
       OBJECT_STORAGE_RETENTION_DAYS: ${OBJECT_STORAGE_RETENTION_DAYS:-30}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-365}
     ports:
       - "3000:3000"
     # Persist encrypted backup files on the host for local verification and restore drills.
@@ -88,11 +92,15 @@ services:
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 2592000
       BACKUP_ENCRYPTION_KEY: development-only-backup-key-please-change-1234
+      REDIS_URL: redis://redis:6379
+      SIEM_INGEST_URL: ${SIEM_INGEST_URL:-}
+      SIEM_INGEST_TOKEN: ${SIEM_INGEST_TOKEN:-}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       EMAIL_FROM: ${EMAIL_FROM:-SecureFlow <no-reply@secureflow.local>}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-365}
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,6 +126,7 @@ services:
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-}
       OBJECT_STORAGE_RETENTION_DAYS: ${OBJECT_STORAGE_RETENTION_DAYS:-30}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-365}
     volumes:
       - ./backups:/app/backups
     depends_on:

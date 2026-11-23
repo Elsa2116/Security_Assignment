@@ -147,13 +147,27 @@ async function loadAdminSecurity() {
     let governance = document.querySelector('#governance-list');
     if (!governance) { governance = document.createElement('div'); governance.id = 'governance-list'; governance.className = 'governance-grid'; document.querySelector('#admin-security-panel').append(governance); }
     governance.replaceChildren();
-    const governanceCard = (title, rows, empty, formatter) => { const card = document.createElement('div'); card.className = 'card governance-card'; const heading = document.createElement('h4'); heading.textContent = title; card.append(heading); if (!rows.length) { const text = document.createElement('p'); text.className = 'muted'; text.textContent = empty; card.append(text); } else rows.slice(0, 8).forEach(row => { const item = document.createElement('div'); item.className = 'security-item'; item.textContent = formatter(row); card.append(item); }); governance.append(card); };
+    const governanceCard = (title, rows, empty, formatter) => { const card = document.createElement('div'); card.className = 'card governance-card'; const heading = document.createElement('h4'); heading.textContent = title; card.append(heading); if (!rows.length) { const text = document.createElement('p'); text.className = 'muted'; text.textContent = empty; card.append(text); } else rows.slice(0, 8).forEach(row => { const item = document.createElement('div'); item.className = 'security-item'; item.textContent = formatter(row); if (title === 'Security changes' && row.status === 'PENDING') { const actions = document.createElement('div'); actions.className = 'admin-actions'; for (const action of ['APPROVE', 'REJECT']) { const button = document.createElement('button'); button.className = action === 'APPROVE' ? '' : 'secondary'; button.type = 'button'; button.textContent = action === 'APPROVE' ? 'Approve' : 'Reject'; button.addEventListener('click', async () => { const reason = window.prompt(`Reason for ${action.toLowerCase()}ing this change:`); if (!reason || reason.trim().length < 10) return; try { await api(`/api/v1/admin/security-changes/${row.id}`, { method: 'PATCH', headers: csrfHeaders(), body: JSON.stringify({ action, reason }) }); showStatus(`Security change ${action.toLowerCase()}d.`); await loadAdminSecurity(); } catch (error) { showStatus(error.message, true); } }); actions.append(button); } item.append(actions); } card.append(item); }); governance.append(card); };
     governanceCard('Risk register', risks, 'No risks recorded.', row => `${row.score} · ${row.title} · ${row.status}`);
     governanceCard('Published policies', policies, 'No policies published.', row => `${row.type} v${row.version}`);
     governanceCard('Security changes', changes, 'No security changes recorded.', row => `${row.type} · ${row.status} · ${row.reason}`);
     governanceCard('Access reviews', reviews, 'No access reviews created.', row => `${row.periodStart} to ${row.periodEnd} · ${row.pendingCount} pending`);
   } catch (error) { showStatus(error.message, true); }
 }
+
+// Bind real governance forms to organization-scoped API routes; forms never write directly to the database.
+function bindGovernanceForms() {
+  const forms = [
+    ['incident-form', '/api/v1/admin/incidents', () => ({ severity: document.querySelector('#incident-severity').value, summary: document.querySelector('#incident-summary').value })],
+    ['risk-form', '/api/v1/admin/risks', () => ({ title: document.querySelector('#risk-title').value, likelihood: Number(document.querySelector('#risk-likelihood').value), impact: Number(document.querySelector('#risk-impact').value), mitigation: document.querySelector('#risk-mitigation').value })],
+    ['access-review-form', '/api/v1/admin/access-reviews', () => ({ periodStart: document.querySelector('#review-start').value, periodEnd: document.querySelector('#review-end').value })],
+    ['training-form', '/api/v1/admin/training', () => ({ title: document.querySelector('#training-title').value, content: document.querySelector('#training-content').value })],
+    ['policy-form', '/api/v1/admin/policies', () => ({ type: document.querySelector('#policy-type').value, version: document.querySelector('#policy-version').value, content: document.querySelector('#policy-content').value })],
+    ['change-form', '/api/v1/admin/security-changes', () => ({ type: document.querySelector('#change-type').value, reason: document.querySelector('#change-reason').value })]
+  ];
+  for (const [id, endpoint, payload] of forms) { const form = document.querySelector(`#${id}`); if (!form || form.dataset.bound === 'true') continue; form.dataset.bound = 'true'; form.addEventListener('submit', async event => { event.preventDefault(); const button = form.querySelector('button'); button.disabled = true; try { await api(endpoint, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(payload()) }); form.reset(); showStatus('Governance record saved.'); await loadAdminSecurity(); } catch (error) { showStatus(error.message, true); } finally { button.disabled = false; } }); }
+}
+bindGovernanceForms();
 
 document.querySelector('#show-login').addEventListener('click', event => {
   event.preventDefault();

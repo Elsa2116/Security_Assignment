@@ -12,8 +12,9 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-# The backup service invokes pg_dump; keep the PostgreSQL client in the runtime image.
-RUN apk add --no-cache postgresql-client \
+# The backup service invokes pg_dump/pg_restore; match the PostgreSQL 16 server
+# so newer client-only SQL settings cannot break isolated restore validation.
+RUN apk add --no-cache postgresql16-client \
   && addgroup -S secureflow \
   && adduser -S secureflow -G secureflow
 COPY --from=build /app/package*.json ./

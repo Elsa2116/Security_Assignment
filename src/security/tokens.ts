@@ -3,6 +3,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { pool, query, withTransaction } from '../db/pool.js';
+import { emitSecurityEvent } from '../observability/siem.js';
 
 const generated = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const privateKey = process.env.JWT_PRIVATE_KEY || generated.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -51,12 +52,14 @@ export async function rotateRefreshToken(oldToken: string, userId: string) {
       await client.query('UPDATE app.refresh_tokens SET revoked_at=now() WHERE family_id=$1 AND revoked_at IS NULL', [current.family_id]);
       await client.query("INSERT INTO app.security_alerts(alert_type,severity,details) VALUES ('REFRESH_TOKEN_REPLAY','high',$1)", [JSON.stringify({ userId })]);
       await client.query("INSERT INTO app.audit_events(actor_user_id,action,resource_type,outcome,metadata) VALUES ($1,'refresh-token.replay','refresh_token','failure',$2)", [userId, JSON.stringify({ familyId: current.family_id })]);
+      emitSecurityEvent('auth.refresh_token_replay', { userId, familyId: current.family_id, outcome: 'failure' });
       throw new Error('refresh_token_replay');
     }
     const next = crypto.randomBytes(32).toString('base64url');
     const inserted = await client.query<{ id: string }>(`INSERT INTO app.refresh_tokens(user_id,token_hash,family_id,expires_at) SELECT user_id,$1,family_id,LEAST(expires_at,now()+interval '7 days') FROM app.refresh_tokens WHERE id=$2 RETURNING id`, [hashRefreshToken(next), current.id]);
     await client.query('UPDATE app.refresh_tokens SET used_at=now(),revoked_at=now(),replaced_by=$1,last_used_at=now() WHERE id=$2', [inserted.rows[0].id, current.id]);
     await client.query("INSERT INTO app.audit_events(actor_user_id,action,resource_type,resource_id,outcome) VALUES ($1,'refresh-token.rotate','refresh_token',$2,'success')", [userId, current.id]);
+    emitSecurityEvent('auth.refresh_token_rotate', { userId, familyId: current.family_id, outcome: 'success' });
     return next;
   });
 }
@@ -67,6 +70,7 @@ export async function revokeSession(userId: string, sessionId: string, reason = 
     await client.query('UPDATE auth.session SET revoked_at=now() WHERE id=$1 AND user_id=$2', [sessionId, userId]);
     await client.query("INSERT INTO app.audit_events(actor_user_id,action,resource_type,resource_id,outcome) VALUES ($1,'session.revoke','session',$2,'success')", [userId, sessionId]);
   });
+  emitSecurityEvent('auth.session_revoke', { userId, sessionId, reason, outcome: 'success' });
 }
 
 export { pool };

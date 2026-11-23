@@ -7,7 +7,7 @@ import { config } from './config.js';
 import { query } from './db/pool.js';
 import { api } from './api.js';
 import { verifyCaptcha } from './security/captcha.js';
-import { isRateLimited, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
+import { isLoginLocked, recordLoginFailure, recordLoginSuccess } from './security/login-protection.js';
 // Run the outbox email worker in the same process so the free Render web service can deliver verification emails without a paid worker service.
 import './workers/index.js';
 
@@ -36,6 +36,12 @@ app.use(helmet({
     }
   }
 }));
+// Add explicit policy headers requested by the security baseline and ZAP review.
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 // Expose only the public reCAPTCHA site key; the secret key remains server-side in Render environment variables.
 app.get('/api/public-config', (_req, res) => res.json({ captchaSiteKey: process.env.CAPTCHA_SITE_KEY ?? '' }));
@@ -84,9 +90,7 @@ app.all('/api/auth/{*splat}', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, s
   // Protect the login endpoint before Better Auth performs password work.
   if (req.path.endsWith('/sign-in/email')) {
     const loginEmail = String(req.body?.email ?? '').trim().toLowerCase();
-    if (isRateLimited(`${loginEmail}:${req.ip ?? ''}`)) return res.status(429).json({ error: { code: 'LOGIN_THROTTLED', message: 'Too many attempts; try again later' } });
-    const locked = await query('SELECT 1 FROM app.user_profiles WHERE email_normalized=$1 AND locked_until > now()', [loginEmail]);
-    if (locked.rowCount) return res.status(423).json({ error: { code: 'ACCOUNT_LOCKED', message: 'Sign-in is temporarily unavailable; try again later' } });
+    if (await isLoginLocked(loginEmail, req.ip ?? '')) return res.status(423).json({ error: { code: 'ACCOUNT_LOCKED', message: 'Sign-in is temporarily unavailable; try again later' } });
   }
   // Keep resend requests generic and enforce a one-minute per-email cooldown without revealing account existence.
   if (req.path.endsWith('/send-verification-email')) {

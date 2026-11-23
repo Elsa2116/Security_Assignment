@@ -3,3 +3,8 @@ dist/
 .env
 coverage/
 *.log
+reports/
+backups/
+test-results/
+.npm-cache/
+secureflow-local-backup.sql

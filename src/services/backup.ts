@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { config } from '../config.js';
 import { pool, withTransaction } from '../db/pool.js';
+import { emitSecurityEvent } from '../observability/siem.js';
 
 const execFileAsync = promisify(execFile);
 const backupDir = path.resolve(process.env.BACKUP_DIR ?? './backups');
@@ -14,7 +15,10 @@ function key() { return crypto.createHash('sha256').update(config.BACKUP_ENCRYPT
 
 // Upload only already-encrypted backup bytes to configured S3-compatible storage; local-only mode remains the default.
 async function uploadOffsite(storageKey: string, payload: Buffer) {
-  const endpoint = process.env.OBJECT_STORAGE_ENDPOINT_URL;
+  // Accept both the documented HTTPS URL and the host-only value copied from
+  // the Backblaze console, while always forcing TLS for backup transport.
+  const rawEndpoint = process.env.OBJECT_STORAGE_ENDPOINT_URL;
+  const endpoint = rawEndpoint ? (rawEndpoint.startsWith('http://') || rawEndpoint.startsWith('https://') ? rawEndpoint : `https://${rawEndpoint}`) : undefined;
   const accessKey = process.env.OBJECT_STORAGE_ACCESS_KEY;
   const secretKey = process.env.OBJECT_STORAGE_SECRET_KEY;
   const bucket = process.env.OBJECT_STORAGE_BUCKET;
@@ -49,6 +53,7 @@ export async function createEncryptedFullBackup() {
     await client.query(`INSERT INTO app.backup_records(kind,storage_key,checksum,encryption_key_id,started_at,finished_at,status,retention_until) VALUES ('FULL',$1,$2,$3,$4,$5,'COMPLETED',now()+interval '30 days')`, [storageKey, checksum, 'local-dev-derived-key', started, finished]);
     await client.query(`INSERT INTO app.audit_events(action,resource_type,outcome,metadata) VALUES ('backup.full','backup','success',$1)`, [JSON.stringify({ storageKey, checksum, offsite })]);
   });
+  emitSecurityEvent('backup.completed', { storageKey, checksum, bytes: payload.byteLength, offsite });
   return { storageKey, checksum, bytes: payload.byteLength, offsite };
 }
 
