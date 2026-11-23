@@ -12,6 +12,9 @@ import { isLoginLocked, recordLoginFailure, recordLoginSuccess } from './securit
 import './workers/index.js';
 
 const app = express();
+// Render places one trusted reverse proxy in front of the service; trust that hop so
+// express-rate-limit can safely derive the real client IP from X-Forwarded-For.
+app.set('trust proxy', 1);
 const verificationResends = new Map<string, number>();
 
 // Check only the first five SHA-1 characters with HIBP's k-anonymity API; the password and full hash never leave this process.

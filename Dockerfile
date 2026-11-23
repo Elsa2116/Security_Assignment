@@ -27,4 +27,6 @@ COPY migrations ./migrations
 RUN mkdir -p /app/backups && chown -R secureflow:secureflow /app
 USER secureflow
 EXPOSE 3000
-CMD ["node", "dist/src/server.js"]
+# Apply idempotent versioned SQL migrations before the API accepts requests so a
+# fresh Render/production database always contains Better Auth and app tables.
+CMD ["sh", "-c", "node dist/scripts/migrate.js && exec node dist/src/server.js"]
